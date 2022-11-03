@@ -13,7 +13,7 @@ export class TilesRendererBase {
 	maxDepth : Number;
 	stopAtEmptyTiles : Boolean;
 
-	fetchOptions : Object;
+	fetchOptions : RequestInit;
 	/** function to preprocess the url for each individual tile */
 	preprocessURL : ((uri: string | URL) => string) | null;
 
@@ -28,5 +28,6 @@ export class TilesRendererBase {
 		afterCb : ( ( tile : Object, parent : Object, depth : Number ) => Boolean ) | null
 	) : void;
 	dispose() : void;
+	resetFailedTiles() : void;
 
 }

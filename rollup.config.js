@@ -5,8 +5,8 @@ import postcss from 'rollup-plugin-postcss';
 import babel from 'rollup-plugin-babel';
 import stripBanner from 'rollup-plugin-strip-banner';
 import bundleWorker from 'rollup-plugin-bundle-worker';
-import { terser } from "rollup-plugin-terser";
-import strip from "@rollup/plugin-strip";
+import { terser } from 'rollup-plugin-terser';
+import strip from '@rollup/plugin-strip';
 import nodePolyfills from 'rollup-plugin-node-polyfills';
 // import * as THREE from 'three';
 
@@ -20,9 +20,12 @@ export default {
 		format: 'umd',
 		name: 'TDTilesRender',
 		file: `./build/${filename}`,
+		globals: {
+			'three': 'THREE'
+		}
 	},
 	treeshake: true,
-	// external: [ 'THREE' ],
+	external: [ 'three' ],
 	plugins: [
 		nodePolyfills(),
 		babel( {

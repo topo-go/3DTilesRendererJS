@@ -29,12 +29,13 @@ import {
 	sRGBEncoding,
 	Matrix4,
 	Box3,
+	Sphere,
 } from 'three';
 import { FlyOrbitControls } from './FlyOrbitControls.js';
 import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import * as dat from 'three/examples/jsm/libs/dat.gui.module.js';
+import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 
 const ALL_HITS = 1;
@@ -49,7 +50,7 @@ let raycaster, mouse, rayIntersect, lastHoveredElement;
 let offsetParent;
 let statsContainer, stats;
 
-let params = {
+const params = {
 
 	'enableUpdate': true,
 	'raycast': NONE,
@@ -58,7 +59,7 @@ let params = {
 	'orthographic': false,
 
 	'ionAssetId': '40866',
-	'ionAccessToken': '',
+	'ionAccessToken': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjYjNlMTg5Zi1hMzc2LTRmZjktOGEwZC00NGEzNTM0MTAzZGUiLCJpZCI6MjU5LCJpYXQiOjE1MTgxOTE2NTV9.qaP8-_Ej6AihGnv5iB990Hm6lHr8F_rrC3_EPxdT6MQ',
 	'errorTarget': 6,
 	'errorThreshold': 60,
 	'maxDepth': 15,
@@ -130,6 +131,7 @@ function reinstantiateTiles() {
 
 		offsetParent.remove( tiles.group );
 		tiles.dispose();
+		tiles = null;
 
 	}
 
@@ -157,7 +159,7 @@ function reinstantiateTiles() {
 				url = new URL( json.url );
 				const version = url.searchParams.get( 'v' );
 
-				tiles = new TilesRenderer( url );
+				tiles = new TilesRenderer( url.toString() );
 				tiles.fetchOptions.headers = {};
 				tiles.fetchOptions.headers.Authorization = `Bearer ${json.accessToken}`;
 
@@ -176,10 +178,23 @@ function reinstantiateTiles() {
 				tiles.onLoadTileSet = () => {
 
 					const box = new Box3();
+					const sphere = new Sphere();
 					const matrix = new Matrix4();
-					tiles.getOrientedBounds( box, matrix );
-					const position = new Vector3().setFromMatrixPosition( matrix );
-					const distanceToEllipsoidCenter = position.length();
+
+					let position;
+					let distanceToEllipsoidCenter;
+
+					if ( tiles.getOrientedBounds( box, matrix ) ) {
+
+						position = new Vector3().setFromMatrixPosition( matrix );
+						distanceToEllipsoidCenter = position.length();
+
+					} else if ( tiles.getBoundingSphere( sphere ) ) {
+
+						position = sphere.center.clone();
+						distanceToEllipsoidCenter = position.length();
+
+					}
 
 					const surfaceDirection = position.normalize();
 					const up = new Vector3( 0, 1, 0 );
@@ -334,7 +349,7 @@ function init() {
 
 
 	// GUI
-	const gui = new dat.GUI();
+	const gui = new GUI();
 	gui.width = 300;
 
 	const ionOptions = gui.addFolder( 'Ion' );

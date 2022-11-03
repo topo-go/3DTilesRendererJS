@@ -1,12 +1,56 @@
-import path from 'path';
-import { urlJoin } from '../utilities/urlJoin.js';
+import { getUrlExtension } from '../utilities/urlExtension.js';
 import { LRUCache } from '../utilities/LRUCache.js';
 import { PriorityQueue } from '../utilities/PriorityQueue.js';
 import { determineFrustumSet, toggleTiles, skipTraversal, markUsedSetLeaves, traverseSet } from './traverseFunctions.js';
 import { UNLOADED, LOADING, PARSING, LOADED, FAILED } from './constants.js';
 
-// Function for sorting the evicted LRU items. We should evict the shallowest depth first.
-const priorityCallback = tile => 1 / ( tile.__depthFromRenderedParent + 1 );
+/**
+ * Function for provided to sort all tiles for prioritizing loading/unloading.
+ *
+ * @param {Tile} a
+ * @param {Tile} b
+ * @returns number
+ */
+const priorityCallback = ( a, b ) => {
+
+	if ( a.__depth !== b.__depth ) {
+
+		// load shallower tiles first
+		return a.__depth > b.__depth ? - 1 : 1;
+
+	} else if ( a.__inFrustum !== b.__inFrustum ) {
+
+		// load tiles that are in the frustum at the current depth
+		return a.__inFrustum ? 1 : - 1;
+
+	} else if ( a.__used !== b.__used ) {
+
+		// load tiles that have been used
+		return a.__used ? 1 : - 1;
+
+	} else if ( a.__error !== b.__error ) {
+
+		// load the tile with the higher error
+		return a.__error > b.__error ? 1 : - 1;
+
+	} else if ( a.__distanceFromCamera !== b.__distanceFromCamera ) {
+
+		// and finally visible tiles which have equal error (ex: if geometricError === 0)
+		// should prioritize based on distance.
+		return a.__distanceFromCamera > b.__distanceFromCamera ? - 1 : 1;
+
+	}
+
+	return 0;
+
+};
+
+/**
+ * Function for sorting the evicted LRU items. We should evict the shallowest depth first.
+ * @param {Tile} tile
+ * @returns number
+ */
+const lruPriorityCallback = ( tile ) => 1 / ( tile.__depthFromRenderedParent + 1 );
 
 export class TilesRendererBase {
 
@@ -42,7 +86,7 @@ export class TilesRendererBase {
 		this.preprocessURL = null;
 
 		const lruCache = new LRUCache();
-		lruCache.unloadPriorityCallback = priorityCallback;
+		lruCache.unloadPriorityCallback = lruPriorityCallback;
 
 		const downloadQueue = new PriorityQueue();
 		downloadQueue.maxJobs = 4;
@@ -146,7 +190,8 @@ export class TilesRendererBase {
 
 			if ( tile.content.uri ) {
 
-				tile.content.uri = urlJoin( tileSetDir, tile.content.uri );
+				// tile content uri has to be interpreted relative to the tileset.json
+				tile.content.uri = new URL( tile.content.uri, tileSetDir + '/' ).toString();
 
 			}
 
@@ -174,7 +219,8 @@ export class TilesRendererBase {
 		if ( uri ) {
 
 			// "content" should only indicate loadable meshes, not external tile sets
-			const isExternalTileSet = /\.json$/i.test( tile.content.uri );
+			const extension = getUrlExtension( tile.content.uri );
+			const isExternalTileSet = Boolean( extension && extension.toLowerCase() === 'json' );
 			tile.__externalTileSet = isExternalTileSet;
 			tile.__contentEmpty = isExternalTileSet;
 
@@ -185,7 +231,10 @@ export class TilesRendererBase {
 
 		}
 
-		tile.__error = 0.0;
+		// Expected to be set during calculateError()
+		tile.__distanceFromCamera = Infinity;
+		tile.__error = Infinity;
+
 		tile.__inFrustum = false;
 		tile.__isLeaf = false;
 
@@ -240,6 +289,30 @@ export class TilesRendererBase {
 
 	}
 
+
+	resetFailedTiles() {
+
+		const stats = this.stats;
+		if ( stats.failed === 0 ) {
+
+			return;
+
+		}
+
+		this.traverse( tile => {
+
+			if ( tile.__loadingState === FAILED ) {
+
+				tile.__loadingState = UNLOADED;
+
+			}
+
+		} );
+
+		stats.failed = 0;
+
+	}
+
 	// Private Functions
 	fetchTileSet( url, fetchOptions, parent = null ) {
 
@@ -265,7 +338,9 @@ export class TilesRendererBase {
 					'asset.version is expected to be a string of "1.0" or "0.0"'
 				);
 
-				const basePath = path.dirname( url );
+				// remove trailing slash and last path-segment from the URL
+				let basePath = url.replace( /\/[^\/]*\/?$/, '' );
+				basePath = new URL( basePath, window.location.href ).toString();
 
 				traverseSet(
 					json.root,
@@ -287,7 +362,7 @@ export class TilesRendererBase {
 		if ( ! ( url in tileSets ) ) {
 
 			const pr = this
-				.fetchTileSet( url, this.fetchOptions )
+				.fetchTileSet( this.preprocessURL ? this.preprocessURL( url ) : url, this.fetchOptions )
 				.then( json => {
 
 					tileSets[ url ] = json;
@@ -420,17 +495,17 @@ export class TilesRendererBase {
 
 		if ( isExternalTileSet ) {
 
-			downloadQueue.add( tile, tile => {
+			downloadQueue.add( tile, tileCb => {
 
 				// if it has been unloaded then the tile has been disposed
-				if ( tile.__loadIndex !== loadIndex ) {
+				if ( tileCb.__loadIndex !== loadIndex ) {
 
 					return Promise.resolve();
 
 				}
 
-				const uri = this.preprocessURL ? this.preprocessURL( tile.content.uri ) : tile.content.uri;
-				return this.fetchTileSet( uri, Object.assign( { signal }, this.fetchOptions ), tile );
+				const uri = this.preprocessURL ? this.preprocessURL( tileCb.content.uri ) : tileCb.content.uri;
+				return this.fetchTileSet( uri, Object.assign( { signal }, this.fetchOptions ), tileCb );
 
 			} )
 				.then( json => {
@@ -453,15 +528,15 @@ export class TilesRendererBase {
 
 		} else {
 
-			downloadQueue.add( tile, tile => {
+			downloadQueue.add( tile, downloadTile => {
 
-				if ( tile.__loadIndex !== loadIndex ) {
+				if ( downloadTile.__loadIndex !== loadIndex ) {
 
 					return Promise.resolve();
 
 				}
 
-				const uri = this.preprocessURL ? this.preprocessURL( tile.content.uri ) : tile.content.uri;
+				const uri = this.preprocessURL ? this.preprocessURL( downloadTile.content.uri ) : downloadTile.content.uri;
 				return fetch( uri, Object.assign( { signal }, this.fetchOptions ) );
 
 			} )
@@ -498,19 +573,19 @@ export class TilesRendererBase {
 					tile.__loadAbort = null;
 					tile.__loadingState = PARSING;
 
-					return parseQueue.add( tile, tile => {
+					return parseQueue.add( tile, parseTile => {
 
 						// if it has been unloaded then the tile has been disposed
-						if ( tile.__loadIndex !== loadIndex ) {
+						if ( parseTile.__loadIndex !== loadIndex ) {
 
 							return Promise.resolve();
 
 						}
 
-						const uri = tile.content.uri;
-						const extension = uri.split( /\./g ).pop();
+						const uri = parseTile.content.uri;
+						const extension = getUrlExtension( uri );
 
-						return this.parseTile( buffer, tile, extension );
+						return this.parseTile( buffer, parseTile, extension );
 
 					} );
 
@@ -554,6 +629,17 @@ export class TilesRendererBase {
 			lruCache.remove( tile );
 
 		} );
+
+		this.stats = {
+			parsing: 0,
+			downloading: 0,
+			failed: 0,
+			inFrustum: 0,
+			used: 0,
+			active: 0,
+			visible: 0,
+		};
+		this.frameCount = 0;
 
 	}
 

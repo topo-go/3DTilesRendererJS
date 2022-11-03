@@ -6,6 +6,109 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## Unreleased
 ### Fixed
+- Incorrect type definitions.
+
+## [0.3.14] - 2022-09-26
+### Fixed
+- Removed unused exports.
+
+
+## [0.3.13] - 2022-09-26
+### Added
+- Classes for Ellipsoid and EllipsoidRegion.
+- DebugTilesRenderer: Added "displayRegionBounds" flag.
+- Support for region bounds by converting the volumes into sphere and box bounds.
+
+## [0.3.12] - 2022-08-26
+### Fixed
+- B3DMLoader: regression causing RTC_CENTER to not be respected.
+
+### Added
+- Support for GLTFLoader Cesium_RTC extension.
+
+## [0.3.11] - 2022-07-04
+### Added
+- Support for determining tile format based on magic bytes.
+
+### Fixed
+- Small fixes to the `dispose` function.
+- Re-add support for relative tile urls.
+
+## [0.3.10] - 2022-07-02
+### Added
+- `resetFailedTiles` to enable retry tile downloads that failed.
+
+### Fixed
+- Support for loading absolute URIs.
+- Fix the application of the tile "up" axis adjustments.
+
+## [0.3.9] - 2022-03-28
+### Fixed
+- Incorrect argument order to `FeatureTable.getData`
+
+## [0.3.7] - 2022-01-29
+### Fixed
+- ensuring the working path included a "/" at the end when generating new file paths for the GLTFExtension and B3DM loaders. 
+
+## [0.3.6] - 2022-01-29
+### Fixed
+- "onPreprocessUrl" is now called for initial Tileset URL.
+
+## [0.3.5] - 2022-01-06
+### Added
+- `TilesRenderer.onTileVisibilityChange` callback.
+- Support for GLTF in tilesets (`3DTILES_content_gltf` extension).
+
+### Changed
+- Improved type definitions.
+- `PNTSLoader.parse` now returns a promise.
+- All model loaders on inherit from a common type.
+
+## [0.3.4] - 2021-11-15
+### Added
+- PriorityQueue: Added `schedulingCallback` to afford flexibility in job scheduling callback for scenarios where `requestAnimationFrame` will not work, such as with WebXR.
+
+### Fixed
+- `autoDisableRendererCulling` incorrectly applying the inverse of the documented effect.
+- Screen space error calculations now use the camera projectionMatrix rather than camera type to determine frustum type.
+
+## [0.3.3] - 2021-09-08
+### Added
+- Support for embedded tileset / tile geometry URLs with hashes, search query parameters.
+
+## [0.3.2] - 2021-09-02
+### Changed
+- DebugTilesRenderer: Bounding boxes now colored down the tree based on depth.
+- DebugTilesRenderer: "MeshStandardMaterial" is now used instead of "MeshBasicMaterial" for debugging.
+- TilesRenderer: add `getBoundingSphere` function.
+
+### Added
+- DebugTilesRenderer: "RANDOM_NODE_COLOR" visualization setting.
+- Names for various tile objects.
+- DebugTilesRenderer: Added `getDebugColor` function for adjusing the debug visualization colors.
+- Support for computing screen space error for tiles that had sphere bounds but no box bounds.
+- DebugTilesRenderer: Added `customColorCallback` and `CUSTOM_COLOR` mode for custom debug coloring.
+
+### Fixed
+- I3DMLoader: Fixed embedded absolute URLs not working correctly.
+- TilesRenderer: "getBounds" function throwing an error if no bounding box is present on the tileset.
+
+## [0.3.1] - 2021-07-28
+### Fixed
+- Case where tiles that were outside of the camera frustum would be loaded with a higher priority.
+- Case where a single tiles renderer tiles would always be loaded with a higher priority.
+- Case where bounding boxes with one dimension of 0 would not compute the distance to camera correctly.
+
+## [0.3.0] - 2021-07-24
+### Added
+- `path-browserify` dependency explicitly rather than relying on implicit polyfills for `path` package.
+
+### Changed
+- `PriorityQueue.priorityCallback` now takes two arguments.
+- The default priority sort now accounts for most recently used tiles, screenspace error, and distance to the camera.
+- `TilesRenderer.calculateError` no longer returns a value but is now expected to set `__error` and `__distanceToCamera` on the tile itself.
+
+### Fixed
 - `TilesRendererBase.preprocessURL` types definition.
 
 ## [0.2.11] - 2021-06-03

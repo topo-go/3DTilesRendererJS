@@ -24,7 +24,8 @@ function resetFrameState( tile, frameCount ) {
 		tile.__isLeaf = false;
 		tile.__visible = false;
 		tile.__active = false;
-		tile.__error = 0;
+		tile.__error = Infinity;
+		tile.__distanceFromCamera = Infinity;
 		tile.__childrenWereVisible = false;
 		tile.__allChildrenLoaded = false;
 
@@ -145,8 +146,10 @@ export function determineFrustumSet( tile, renderer ) {
 	// at an external tile set.
 	if ( ( stopAtEmptyTiles || ! tile.__contentEmpty ) && ! tile.__externalTileSet ) {
 
-		const error = renderer.calculateError( tile );
-		tile.__error = error;
+		// compute the _error and __distanceFromCamera fields
+		renderer.calculateError( tile );
+
+		const error = tile.__error;
 		if ( error <= errorTarget ) {
 
 			return true;
@@ -300,7 +303,7 @@ export function skipTraversal( tile, renderer ) {
 	const loadedContent = isDownloadFinished( tile.__loadingState ) && hasContent;
 	const childrenWereVisible = tile.__childrenWereVisible;
 	const children = tile.children;
-	let allChildrenHaveContent = tile.__allChildrenLoaded;
+	const allChildrenHaveContent = tile.__allChildrenLoaded;
 
 	// Increment the relative depth of the node to the nearest rendered parent if it has content
 	// and is being rendered.

@@ -12,13 +12,14 @@ import {
 	ShaderMaterial,
 	MeshStandardMaterial,
 	PCFSoftShadowMap,
+	Sphere,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import * as dat from 'three/examples/jsm/libs/dat.gui.module.js';
+import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 
 let camera, controls, scene, renderer, tiles, orthoCamera;
-let offsetParent, box, dirLight, statsContainer;
+let offsetParent, box, sphere, dirLight, statsContainer;
 let stats;
 
 const DEFAULT = 0;
@@ -128,7 +129,7 @@ function updateMaterial( scene ) {
 		if ( c.isMesh ) {
 
 			c.material.dispose();
-			switch( materialIndex ) {
+			switch ( materialIndex ) {
 
 				case DEFAULT:
 					c.material = c.originalMaterial;
@@ -258,6 +259,7 @@ function init() {
 	scene.add( ambLight );
 
 	box = new Box3();
+	sphere = new Sphere();
 
 	offsetParent = new Group();
 	scene.add( offsetParent );
@@ -268,13 +270,13 @@ function init() {
 	window.addEventListener( 'resize', onWindowResize, false );
 
 	// GUI
-	const gui = new dat.GUI();
+	const gui = new GUI();
 	gui.width = 300;
 	gui.add( params, 'orthographic' );
 	gui.add( params, 'material', { DEFAULT, GRADIENT, TOPOGRAPHIC_LINES, LIGHTING } )
 		.onChange( () => {
 
-			tiles.forEachLoadedModel( updateMaterial )
+			tiles.forEachLoadedModel( updateMaterial );
 
 		} );
 	gui.add( params, 'rebuild' );
@@ -316,7 +318,7 @@ function updateOrthoCamera() {
 	orthoCamera.rotation.copy( camera.rotation );
 
 	const scale = camera.position.distanceTo( controls.target ) / 2.0;
-	let aspect = window.innerWidth / window.innerHeight;
+	const aspect = window.innerWidth / window.innerHeight;
 	orthoCamera.left = - aspect * scale;
 	orthoCamera.right = aspect * scale;
 	orthoCamera.bottom = - scale;
@@ -357,6 +359,11 @@ function animate() {
 	if ( tiles.getBounds( box ) ) {
 
 		box.getCenter( tiles.group.position );
+		tiles.group.position.multiplyScalar( - 1 );
+
+	} else if ( tiles.getBoundingSphere( sphere ) ) {
+
+		tiles.group.position.copy( sphere.center );
 		tiles.group.position.multiplyScalar( - 1 );
 
 	}

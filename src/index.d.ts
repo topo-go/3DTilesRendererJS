@@ -1,40 +1,5 @@
-import {
-	DebugTilesRenderer,
-	NONE,
-	SCREEN_ERROR,
-	GEOMETRIC_ERROR,
-	DISTANCE,
-	DEPTH,
-	RELATIVE_DEPTH,
-	IS_LEAF,
-	RANDOM_COLOR,
-} from './three/DebugTilesRenderer';
-import { TilesRenderer } from './three/TilesRenderer';
-import { B3DMLoader } from './three/B3DMLoader';
-import { I3DMLoader } from './three/I3DMLoader';
-import { PNTSLoader } from './three/PNTSLoader';
-import { CMPTLoader } from './three/CMPTLoader';
-
-import { TilesRendererBase } from './base/TilesRendererBase';
-import { B3DMLoaderBase } from './base/B3DMLoaderBase';
-import { I3DMLoaderBase } from './base/I3DMLoaderBase';
-import { PNTSLoaderBase } from './base/PNTSLoaderBase';
-import { CMPTLoaderBase } from './base/CMPTLoaderBase';
-
-import { LRUCache } from './utilities/LRUCache';
-import { PriorityQueue } from './utilities/PriorityQueue';
-
 export {
 	DebugTilesRenderer,
-	TilesRenderer,
-	B3DMLoader,
-
-	TilesRendererBase,
-	B3DMLoaderBase,
-
-	LRUCache,
-	PriorityQueue,
-
 	NONE,
 	SCREEN_ERROR,
 	GEOMETRIC_ERROR,
@@ -43,4 +8,28 @@ export {
 	RELATIVE_DEPTH,
 	IS_LEAF,
 	RANDOM_COLOR,
-};
+	RANDOM_NODE_COLOR,
+	CUSTOM_COLOR,
+} from './three/DebugTilesRenderer';
+export { TilesRenderer } from './three/TilesRenderer';
+export { TilesGroup } from './three/TilesGroup';
+export { B3DMLoader } from './three/B3DMLoader';
+export { I3DMLoader } from './three/I3DMLoader';
+export { PNTSLoader } from './three/PNTSLoader';
+export { CMPTLoader } from './three/CMPTLoader';
+export { GLTFExtensionLoader } from './three/GLTFExtensionLoader';
+export { Ellipsoid } from './three/math/Ellipsoid';
+export { EllipsoidRegion } from './three/math/EllipsoidRegion';
+
+export { TilesRendererBase } from './base/TilesRendererBase';
+export { Tile } from './base/Tile';
+export { TileBase } from './base/TileBase';
+export { Tileset } from './base/Tileset';
+export { B3DMLoaderBase } from './base/B3DMLoaderBase';
+export { I3DMLoaderBase } from './base/I3DMLoaderBase';
+export { PNTSLoaderBase } from './base/PNTSLoaderBase';
+export { CMPTLoaderBase } from './base/CMPTLoaderBase';
+export { LoaderBase } from './base/LoaderBase';
+
+export { LRUCache } from './utilities/LRUCache';
+export { PriorityQueue } from './utilities/PriorityQueue';

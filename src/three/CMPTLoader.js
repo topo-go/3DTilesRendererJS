@@ -1,4 +1,4 @@
-import { Group, DefaultLoadingManager } from 'three';
+import { Group, DefaultLoadingManager, Matrix4 } from 'three';
 import { CMPTLoaderBase } from '../base/CMPTLoaderBase.js';
 import { B3DMLoader } from './B3DMLoader.js';
 import { PNTSLoader } from './PNTSLoader.js';
@@ -10,6 +10,7 @@ export class CMPTLoader extends CMPTLoaderBase {
 
 		super();
 		this.manager = manager;
+		this.adjustmentTransform = new Matrix4();
 
 	}
 
@@ -17,6 +18,7 @@ export class CMPTLoader extends CMPTLoaderBase {
 
 		const result = super.parse( buffer );
 		const manager = this.manager;
+		const adjustmentTransform = this.adjustmentTransform;
 		const promises = [];
 
 		for ( const i in result.tiles ) {
@@ -31,6 +33,8 @@ export class CMPTLoader extends CMPTLoaderBase {
 					loader.workingPath = this.workingPath;
 					loader.fetchOptions = this.fetchOptions;
 
+					loader.adjustmentTransform.copy( adjustmentTransform );
+
 					const promise = loader.parse( slicedBuffer.buffer );
 					promises.push( promise );
 					break;
@@ -40,8 +44,10 @@ export class CMPTLoader extends CMPTLoaderBase {
 				case 'pnts': {
 
 					const slicedBuffer = buffer.slice();
-					const pointsResult = new PNTSLoader( manager ).parse( slicedBuffer.buffer );
-					const promise = Promise.resolve( pointsResult );
+					const loader = new PNTSLoader( manager );
+					loader.workingPath = this.workingPath;
+					loader.fetchOptions = this.fetchOptions;
+					const promise = loader.parse( slicedBuffer.buffer );
 					promises.push( promise );
 					break;
 
@@ -53,6 +59,8 @@ export class CMPTLoader extends CMPTLoaderBase {
 					const loader = new I3DMLoader( manager );
 					loader.workingPath = this.workingPath;
 					loader.fetchOptions = this.fetchOptions;
+
+					loader.adjustmentTransform.copy( adjustmentTransform );
 
 					const promise = loader.parse( slicedBuffer.buffer );
 					promises.push( promise );

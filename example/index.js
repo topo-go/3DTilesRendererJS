@@ -8,6 +8,8 @@ import {
 	RELATIVE_DEPTH,
 	IS_LEAF,
 	RANDOM_COLOR,
+	RANDOM_NODE_COLOR,
+	CUSTOM_COLOR
 } from '../src/index.js';
 import {
 	Scene,
@@ -26,12 +28,14 @@ import {
 	TorusBufferGeometry,
 	OrthographicCamera,
 	sRGBEncoding,
+	Sphere,
 } from 'three';
 import { FlyOrbitControls } from './FlyOrbitControls.js';
 import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import * as dat from 'three/examples/jsm/libs/dat.gui.module.js';
+import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
+import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 
 const ALL_HITS = 1;
@@ -42,34 +46,36 @@ let camera, controls, scene, renderer, tiles, cameraHelper;
 let thirdPersonCamera, thirdPersonRenderer, thirdPersonControls;
 let secondRenderer, secondCameraHelper, secondControls, secondCamera;
 let orthoCamera, orthoCameraHelper;
-let box;
+let box, sphere;
 let raycaster, mouse, rayIntersect, lastHoveredElement;
 let offsetParent;
 let statsContainer, stats;
 
-let params = {
+const params = {
 
-	'enableUpdate': true,
-	'raycast': NONE,
-	'optimizeRaycast': true,
-	'enableCacheDisplay': false,
-	'enableRendererStats': false,
-	'orthographic': false,
+	enableUpdate: true,
+	raycast: NONE,
+	optimizeRaycast: true,
+	enableCacheDisplay: false,
+	enableRendererStats: false,
+	orthographic: false,
 
-	'errorTarget': 6,
-	'errorThreshold': 60,
-	'maxDepth': 15,
-	'loadSiblings': true,
-	'stopAtEmptyTiles': true,
-	'displayActiveTiles': false,
-	'resolutionScale': 1.0,
+	errorTarget: 6,
+	errorThreshold: 60,
+	maxDepth: 15,
+	loadSiblings: true,
+	stopAtEmptyTiles: true,
+	displayActiveTiles: false,
+	resolutionScale: 1.0,
 
-	'up': hashUrl ? '+Z' : '+Y',
-	'displayBoxBounds': false,
-	'colorMode': 0,
-	'showThirdPerson': false,
-	'showSecondView': false,
-	'reload': reinstantiateTiles,
+	up: hashUrl ? '+Z' : '+Y',
+	displayBoxBounds: false,
+	displaySphereBounds: false,
+	displayRegionBounds: false,
+	colorMode: 0,
+	showThirdPerson: false,
+	showSecondView: false,
+	reload: reinstantiateTiles,
 
 };
 
@@ -92,14 +98,36 @@ function reinstantiateTiles() {
 	// Note the DRACO compression files need to be supplied via an explicit source.
 	// We use unpkg here but in practice should be provided by the application.
 	const dracoLoader = new DRACOLoader();
-	dracoLoader.setDecoderPath( 'https://unpkg.com/three@0.123.0/examples/js/libs/draco/gltf/' );
+	dracoLoader.setDecoderPath( 'https://unpkg.com/three@0.140.0/examples/js/libs/draco/gltf/' );
+
+	const ktx2loader = new KTX2Loader();
+	ktx2loader.setTranscoderPath( 'https://unpkg.com/three@0.140.0/examples/js/libs/basis/' );
+	ktx2loader.detectSupport( renderer );
 
 	const loader = new GLTFLoader( tiles.manager );
 	loader.setDRACOLoader( dracoLoader );
+	loader.setKTX2Loader( ktx2loader );
 
 	tiles.fetchOptions.mode = 'cors';
 	tiles.manager.addHandler( /\.gltf$/, loader );
 	offsetParent.add( tiles.group );
+
+	// Used with CUSTOM_COLOR
+	tiles.customColorCallback = ( tile, object ) => {
+
+		const depthIsEven = tile.__depth % 2 === 0;
+		const hex = depthIsEven ? 0xff0000 : 0xffffff;
+		object.traverse( c => {
+
+			if ( c.isMesh ) {
+
+				c.material.color.set( hex );
+
+			}
+
+		} );
+
+	};
 
 }
 
@@ -189,6 +217,7 @@ function init() {
 	scene.add( ambLight );
 
 	box = new Box3();
+	sphere = new Sphere();
 
 	offsetParent = new Group();
 	scene.add( offsetParent );
@@ -214,19 +243,19 @@ function init() {
 
 	onWindowResize();
 	window.addEventListener( 'resize', onWindowResize, false );
-	renderer.domElement.addEventListener( 'mousemove', onMouseMove, false );
-	renderer.domElement.addEventListener( 'mousedown', onMouseDown, false );
-	renderer.domElement.addEventListener( 'mouseup', onMouseUp, false );
-	renderer.domElement.addEventListener( 'mouseleave', onMouseLeave, false );
+	renderer.domElement.addEventListener( 'pointermove', onPointerMove, false );
+	renderer.domElement.addEventListener( 'pointerdown', onPointerDown, false );
+	renderer.domElement.addEventListener( 'pointerup', onPointerUp, false );
+	renderer.domElement.addEventListener( 'pointerleave', onPointerLeave, false );
 
-	secondRenderer.domElement.addEventListener( 'mousemove', onMouseMove, false );
-	secondRenderer.domElement.addEventListener( 'mousedown', onMouseDown, false );
-	secondRenderer.domElement.addEventListener( 'mouseup', onMouseUp, false );
-	secondRenderer.domElement.addEventListener( 'mouseleave', onMouseLeave, false );
+	secondRenderer.domElement.addEventListener( 'pointermove', onPointerMove, false );
+	secondRenderer.domElement.addEventListener( 'pointerdown', onPointerDown, false );
+	secondRenderer.domElement.addEventListener( 'pointerup', onPointerUp, false );
+	secondRenderer.domElement.addEventListener( 'pointerleave', onPointerLeave, false );
 
 
 	// GUI
-	const gui = new dat.GUI();
+	const gui = new GUI();
 	gui.width = 300;
 
 	const tileOptions = gui.addFolder( 'Tiles Options' );
@@ -241,6 +270,8 @@ function init() {
 
 	const debug = gui.addFolder( 'Debug Options' );
 	debug.add( params, 'displayBoxBounds' );
+	debug.add( params, 'displaySphereBounds' );
+	debug.add( params, 'displayRegionBounds' );
 	debug.add( params, 'colorMode', {
 
 		NONE,
@@ -251,6 +282,8 @@ function init() {
 		RELATIVE_DEPTH,
 		IS_LEAF,
 		RANDOM_COLOR,
+		RANDOM_NODE_COLOR,
+		CUSTOM_COLOR
 
 	} );
 	debug.open();
@@ -334,13 +367,13 @@ function onWindowResize() {
 
 }
 
-function onMouseLeave( e ) {
+function onPointerLeave( e ) {
 
 	lastHoveredElement = null;
 
 }
 
-function onMouseMove( e ) {
+function onPointerMove( e ) {
 
 	const bounds = this.getBoundingClientRect();
 	mouse.x = e.clientX - bounds.x;
@@ -354,14 +387,14 @@ function onMouseMove( e ) {
 
 const startPos = new Vector2();
 const endPos = new Vector2();
-function onMouseDown( e ) {
+function onPointerDown( e ) {
 
 	const bounds = this.getBoundingClientRect();
 	startPos.set( e.clientX - bounds.x, e.clientY - bounds.y );
 
 }
 
-function onMouseUp( e ) {
+function onPointerUp( e ) {
 
 	const bounds = this.getBoundingClientRect();
 	endPos.set( e.clientX - bounds.x, e.clientY - bounds.y );
@@ -449,6 +482,8 @@ function animate() {
 	tiles.displayActiveTiles = params.displayActiveTiles;
 	tiles.maxDepth = params.maxDepth;
 	tiles.displayBoxBounds = params.displayBoxBounds;
+	tiles.displaySphereBounds = params.displaySphereBounds;
+	tiles.displayRegionBounds = params.displayRegionBounds;
 	tiles.colorMode = parseFloat( params.colorMode );
 
 	if ( params.orthographic ) {
@@ -493,6 +528,11 @@ function animate() {
 	if ( tiles.getBounds( box ) ) {
 
 		box.getCenter( tiles.group.position );
+		tiles.group.position.multiplyScalar( - 1 );
+
+	} else if ( tiles.getBoundingSphere( sphere ) ) {
+
+		tiles.group.position.copy( sphere.center );
 		tiles.group.position.multiplyScalar( - 1 );
 
 	}

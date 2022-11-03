@@ -2,44 +2,10 @@
 // https://github.com/CesiumGS/3d-tiles/blob/master/specification/TileFormats/Batched3DModel/README.md
 
 import { FeatureTable, BatchTable } from '../utilities/FeatureTable.js';
+import { LoaderBase } from './LoaderBase.js';
+import { readMagicBytes } from '../utilities/readMagicBytes.js';
 
-export class B3DMLoaderBase {
-
-	constructor() {
-
-		this.fetchOptions = {};
-		this.workingPath = '';
-
-	}
-
-	load( url ) {
-
-		return fetch( url, this.fetchOptions )
-			.then( res => {
-
-				if ( ! res.ok ) {
-
-					throw new Error( `Failed to load file "${ url }" with status ${ res.status } : ${ res.statusText }` );
-
-				}
-				return res.arrayBuffer();
-
-			} )
-			.then( buffer => {
-
-				if ( this.workingPath === '' ) {
-
-					const splits = url.split( /\\\//g );
-					splits.pop();
-					this.workingPath = splits.join( '/' );
-
-				}
-
-				return this.parse( buffer );
-
-			} );
-
-	}
+export class B3DMLoaderBase extends LoaderBase {
 
 	parse( buffer ) {
 
@@ -49,11 +15,7 @@ export class B3DMLoaderBase {
 		// 28-byte header
 
 		// 4 bytes
-		const magic =
-			String.fromCharCode( dataView.getUint8( 0 ) ) +
-			String.fromCharCode( dataView.getUint8( 1 ) ) +
-			String.fromCharCode( dataView.getUint8( 2 ) ) +
-			String.fromCharCode( dataView.getUint8( 3 ) );
+		const magic = readMagicBytes( dataView );
 
 		console.assert( magic === 'b3dm' );
 

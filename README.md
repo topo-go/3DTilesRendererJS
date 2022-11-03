@@ -24,6 +24,17 @@ If a tile set or geometry does not load or render properly please make an issue!
 
 [Loading 3D tiles from Cesium Ion](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/ionExample.html)!
 
+**Debug Pages**
+
+[B3DM Loading](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/b3dmExample.html)
+
+[I3DM Loading](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/i3dmExample.html)
+
+[PNTS Loading](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/pntsExample.html)
+
+[Ellipsoid Region Bounds](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/ellipsoid.html)
+
+
 # Use
 
 ## Installation
@@ -56,7 +67,7 @@ function renderLoop() {
 	// before calling tilesRenderer.update
 	camera.updateMatrixWorld();
 	tilesRenderer.update();
-	renderer.render( camera, scene );
+	renderer.render( scene, camera );
 
 }
 ```
@@ -197,7 +208,7 @@ function renderLoop() {
 		needsRerender = false;
 		camera.updateMatrixWorld();
 		tilesRenderer.update();
-		renderer.render( camera, scene );
+		renderer.render( scene, camera );
 
 	}
 
@@ -389,6 +400,14 @@ Updates the tiles to render and kicks off loads for the appropriate tiles in the
 
 Both `group.matrixWorld` and all cameras world matrices are expected to be up to date before this is called.
 
+### .resetFailedTiles
+
+```js
+resetFailedTiles() : void
+```
+
+If any tiles failed to load due to server or network issues then they will not be retried by automatically. This function clears all failed tile states so unloaded tiles can be retried again.
+
 ### .getBounds
 
 ```js
@@ -400,10 +419,18 @@ Sets `box` to the axis aligned root bounding box of the tile set in the [group](
 ### .getOrientedBounds
 
 ```js
-getOrientedBounds( box : Box3, boxTransform : Matrix4) : boolean;
+getOrientedBounds( box : Box3, boxTransform : Matrix4 ) : boolean;
 ```
 
 Sets `box` and `boxTransform` to the bounds and matrix that describe the oriented bounding box that encapsulates the root of the tile set. Returns `false` if the tile root was not loaded.
+
+### .getBoundingSphere
+
+```js
+getBoundingSphere( sphere : Sphere ) : boolean;
+```
+
+Sets `sphere` to the bounding sphere that encapsulates the root of the tile set. Returns `false` if the tile root was not loaded.
 
 ### .hasCamera
 
@@ -457,7 +484,7 @@ Fires the callback for every loaded scene in the hierarchy with the associatd ti
 ### .onLoadTileSet
 
 ```js
-onLoadTileSet = null : ( tileSet : Object ) => void
+onLoadTileSet = null : ( tileSet : Tileset ) => void
 ```
 
 Callback that is called whenever a tile set is loaded.
@@ -465,7 +492,7 @@ Callback that is called whenever a tile set is loaded.
 ### .onLoadModel
 
 ```js
-onLoadModel = null : ( scene : Object3D, tile : object ) => void
+onLoadModel = null : ( scene : Object3D, tile : Tile ) => void
 ```
 
 Callback that is called every time a model is loaded. This can be used in conjunction with [.forEachLoadedModel](#forEachLoadedModel) to set the material of all load and still yet to load meshes in the tile set.
@@ -473,10 +500,18 @@ Callback that is called every time a model is loaded. This can be used in conjun
 ### .onDisposeModel
 
 ```js
-onDisposeModel = null : ( scene : Object3D, tile : object ) => void
+onDisposeModel = null : ( scene : Object3D, tile : Tile ) => void
 ```
 
 Callback that is called every time a model is disposed of. This should be used in conjunction with [.onLoadModel](#onLoadModel) to dispose of any custom materials created for a tile. Note that the textures, materials, and geometries that a tile loaded in with are all automatically disposed of even if they have been removed from the tile meshes.
+
+### .onTileVisibilityChange
+
+```js
+onTileVisibilityChange = null : ( scene : Object3D, tile : Tile, visible : boolean ) => void
+```
+
+Callback that is called when a tile's visibility changed. The parameter `visible` is `true` when the tile is visible
 
 ### .dispose
 
@@ -529,7 +564,20 @@ IS_LEAF
 
 // Render the tiles with a random color to show tile edges clearly.
 RANDOM_COLOR
+
+// Render every individual mesh in the scene with a random color.
+RANDOM_NODE_COLOR
+
+// Sets a custom color using the customColorCallback call back.
+CUSTOM_COLOR
 ```
+### .customColorCallback
+
+```js
+customColorCallback: (tile: Tile, child: Object3D) => void
+```
+
+The callback used if `debugColor` is set to `CUSTOM_COLOR`. Value defaults to `null` and must be set explicitly.
 
 ### .displayBoxBounds
 
@@ -537,7 +585,7 @@ RANDOM_COLOR
 displayBoxBounds = false : Boolean
 ```
 
-Display wireframe bounding boxes from the tiles `boundingVolume.box` for every visible tile.
+Display wireframe bounding boxes from the tiles `boundingVolume.box` (or derived from the region bounds) for every visible tile.
 
 ### .displaySphereBounds
 
@@ -545,7 +593,15 @@ Display wireframe bounding boxes from the tiles `boundingVolume.box` for every v
 displaySphereBounds = false : Boolean
 ```
 
-Display wireframe bounding boxes from the tiles `boundingVolume.sphere` (or derived from the bounding box) for every visible tile.
+Display wireframe bounding boxes from the tiles `boundingVolume.sphere` (or derived from the bounding box / region bounds) for every visible tile.
+
+### .displayRegionBounds
+
+```js
+displayRegionBounds = false : Boolean
+```
+
+Display wireframe bounding rgions from the tiles `boundingVolume.region` for every visible tile if it exists.
 
 ### .maxDebugDepth
 
@@ -571,6 +627,14 @@ maxDebugDistance = - 1 : Number
 
 The distance value that represents white when rendering with `DISTANCE` [colorMode](#colorMode). If `maxDebugDistance` is `-1` then the radius of the tile set is used.
 
+### .getDebugColor
+
+```js
+getDebugColor : ( val : Number, target : Color ) => void
+```
+
+The function used to map a [0, 1] value to a color for debug visualizations. By default the color is mapped from black to white.
+
 ## PriorityQueue
 
 Piority-sorted queue to prioritize file downloads and parsing.
@@ -586,10 +650,18 @@ The maximum number of jobs to be processing at once.
 ### .priorityCallback
 
 ```js
-priorityCallback = null : ( item ) => Number
+priorityCallback = null : ( itemA, itemB ) => Number
 ```
 
 Function to derive the job priority of the given item. Higher priority values get processed first.
+
+### .schedulingCallback
+
+```js
+schedulingCallback = requestAnimationFrame : ( cb : Function ) => void
+```
+
+A function used for scheduling when to run jobs next so more work doesn't happen in a single frame than there is time for -- defaults to the next frame. This should be overriden in scenarios where requestAnimationFrame is not reliable, such as when running in WebXR. See the VR demo for one example on how to handle this with WebXR.
 
 ## LRUCache
 
