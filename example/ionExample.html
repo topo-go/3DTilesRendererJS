@@ -48,6 +48,14 @@
 				<br/>
 			</div>
 		</div>
-        <script src="./ionExample.js"></script>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../js/three.module.js",
+					"three/examples/jsm/": "../jsm/"
+				}
+			}
+		</script>
+        <script src="./ionExample.js" type="module"></script>
     </body>
 </html>

@@ -32,7 +32,7 @@ import {
 	Sphere,
 } from 'three';
 import { FlyOrbitControls } from './FlyOrbitControls.js';
-import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min.js';
@@ -108,6 +108,48 @@ function setupTiles() {
 
 	tiles.manager.addHandler( /\.gltf$/, loader );
 	offsetParent.add( tiles.group );
+	// console.log( tiles.group );
+
+	tiles.onLoadModel = function ( scene ) {
+
+		console.log( 'load model', scene );
+
+		// create a custom material for the tile
+		// scene.traverse( c => {
+		//
+		// 	if ( c.material ) {
+		//
+		// 		c.originalMaterial = c.material;
+		// 		c.material = new MeshBasicMaterial();
+		//
+		// 	}
+		//
+		// } );
+
+	};
+
+	setPosition();
+
+}
+
+function setPosition() {
+
+	const sphere = new Sphere();
+	const interval = setInterval( () => {
+
+		if ( tiles.getBoundingSphere( sphere ) ) {
+
+			console.log( 'get' );
+			const { x, y, z } = tiles.root.cached.sphere.center;
+			tiles.group.position.x -= x;
+			tiles.group.position.y -= y;
+			tiles.group.position.z -= z;
+
+			clearInterval( interval );
+
+		}
+
+	}, 100 );
 
 }
 
@@ -220,6 +262,9 @@ function reinstantiateTiles() {
 
 	} else {
 
+
+		// tiles = new TilesRenderer( './11144/tileset.json' );
+		// tiles = new TilesRenderer( 'https://cgs-public.obs.cn-north-4.myhuaweicloud.com/project/zhengzhourenjiang/xiaotun_3dtiles/tileset.json' );
 		tiles = new TilesRenderer( url );
 
 		setupTiles();

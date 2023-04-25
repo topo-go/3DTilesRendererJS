@@ -15,15 +15,26 @@ const filename = PRODUCTION ? '3DTilesRender.min.js' : '3DTilesRender.js';
 
 export default {
 	input: 'src/index.js',
-	output: {
-		indent: '\t',
-		format: 'umd',
-		name: 'TDTilesRender',
-		file: `./build/${filename}`,
-		globals: {
-			'three': 'THREE'
+	output: [
+		{
+			indent: '\t',
+			format: 'umd',
+			name: 'TDTilesRender',
+			file: `./build/${filename}`,
+			globals: {
+				'three': 'THREE'
+			}
+		},
+		{
+			indent: '\t',
+			format: 'esm',
+			name: 'TDTilesRender',
+			file: './build/3DTilesRender.esm.js',
+			globals: {
+				'three': 'THREE'
+			}
 		}
-	},
+	],
 	treeshake: true,
 	external: [ 'three' ],
 	plugins: [
