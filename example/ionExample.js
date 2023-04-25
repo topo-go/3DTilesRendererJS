@@ -110,9 +110,15 @@ function setupTiles() {
 	offsetParent.add( tiles.group );
 	// console.log( tiles.group );
 
+	tiles.preprocessURL = function ( url ) {
+
+		return url.replaceAll( '+', '%2B' );
+
+	};
+
 	tiles.onLoadModel = function ( scene ) {
 
-		console.log( 'load model', scene );
+		// console.log( 'load model', scene );
 
 		// create a custom material for the tile
 		// scene.traverse( c => {
