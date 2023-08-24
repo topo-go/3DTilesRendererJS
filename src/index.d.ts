@@ -21,6 +21,10 @@ export { GLTFCesiumRTCExtension } from './three/GLTFCesiumRTCExtension';
 export { GLTFExtensionLoader } from './three/GLTFExtensionLoader';
 export { Ellipsoid } from './three/math/Ellipsoid';
 export { EllipsoidRegion } from './three/math/EllipsoidRegion';
+export * as GeoUtils from './three/math/GeoUtils';
+export * from './three/math/GeoConstants';
+export * from './three/renderers/GoogleTilesRenderer';
+export * from './three/renderers/CesiumIonTilesRenderer';
 
 export { TilesRendererBase } from './base/TilesRendererBase';
 export { Tile } from './base/Tile';
@@ -31,6 +35,7 @@ export { I3DMLoaderBase } from './base/I3DMLoaderBase';
 export { PNTSLoaderBase } from './base/PNTSLoaderBase';
 export { CMPTLoaderBase } from './base/CMPTLoaderBase';
 export { LoaderBase } from './base/LoaderBase';
+export * from './base/constants';
 
 export { LRUCache } from './utilities/LRUCache';
 export { PriorityQueue } from './utilities/PriorityQueue';

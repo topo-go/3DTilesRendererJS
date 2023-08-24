@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [0.3.20] - 2023.06.26
+### Added
+- `CesiumIonTilesRenderer` for more convenient use of the ion API.
+- Frustum check support for OBB bounding volumes resulting in more than 35-45% fewer tiles loading and displaying in some cases when OBB bounding volumes are used.
+
+### Changed
+- Consolidate bounding volumes into a common class to simplify implementation.
+- Progressively process recursive tileset tiles preventing frame stalls of up to and over 100ms in some cases when many or large child tilesets were loaded.
+- GoogleTilesRenderer.setLatLonToYUp now sets X+ to north and Z+ to east
+
+### Fixed
+- TilesRenderer.dispose function not working correctly.
+- Type declaration file for constants.
+- Raycasting not working correctly with "additive" tile refinement.
+
+## [0.3.19] - 2023-06-13
+### Fixed
+- Case sensitivity when dealing with file formats.
+- Race condition when setting the transformation of gltf files.
+- Case where internal tilesets were not disposed of properly when calling "dispose".
+- Incorrect calculation of geometric error when spheres are available.
+- Support for rayasting tiles with sphere bounding volumes.
+- Add "constructLatLonFrame" and "getNorthernTangent" to Ellipsoid class.
+
+### Added
+- `getBounds` and `getOrientedBounds` now return the AABB of a sphere if a tileset bounding box is not available.
+- `GoogleTilesRenderer` for rendering Google's Photorealistic 3D Tiles
+
+## [0.3.18] - 2023-05-13
+### Added
+- Support for DRACO-compressed PNTs files.
+
 ## [0.3.17] - 2023-04-03
 ### Fixed
 - Case where raycasting could return an incorrect result when `firstHitOnly` was true.
@@ -59,7 +91,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [0.3.7] - 2022-01-29
 ### Fixed
-- ensuring the working path included a "/" at the end when generating new file paths for the GLTFExtension and B3DM loaders. 
+- ensuring the working path included a "/" at the end when generating new file paths for the GLTFExtension and B3DM loaders.
 
 ## [0.3.6] - 2022-01-29
 ### Fixed

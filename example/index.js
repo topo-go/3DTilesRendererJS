@@ -23,16 +23,15 @@ import {
 	Raycaster,
 	Vector2,
 	Mesh,
-	CylinderBufferGeometry,
+	CylinderGeometry,
 	MeshBasicMaterial,
 	Group,
-	TorusBufferGeometry,
+	TorusGeometry,
 	OrthographicCamera,
-	sRGBEncoding,
 	Sphere,
 } from 'three';
 import { FlyOrbitControls } from './FlyOrbitControls.js';
-import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
@@ -99,10 +98,10 @@ function reinstantiateTiles() {
 	// Note the DRACO compression files need to be supplied via an explicit source.
 	// We use unpkg here but in practice should be provided by the application.
 	const dracoLoader = new DRACOLoader();
-	dracoLoader.setDecoderPath( 'https://unpkg.com/three@0.140.0/examples/js/libs/draco/gltf/' );
+	dracoLoader.setDecoderPath( 'https://unpkg.com/three@0.153.0/examples/jsm/libs/draco/gltf/' );
 
 	const ktx2loader = new KTX2Loader();
-	ktx2loader.setTranscoderPath( 'https://unpkg.com/three@0.140.0/examples/js/libs/basis/' );
+	ktx2loader.setTranscoderPath( 'https://unpkg.com/three@0.153.0/examples/jsm/libs/basis/' );
 	ktx2loader.detectSupport( renderer );
 
 	const loader = new GLTFLoader( tiles.manager );
@@ -142,7 +141,6 @@ function init() {
 	renderer.setPixelRatio( window.devicePixelRatio );
 	renderer.setSize( window.innerWidth, window.innerHeight );
 	renderer.setClearColor( 0x151c1f );
-	renderer.outputEncoding = sRGBEncoding;
 
 	document.body.appendChild( renderer.domElement );
 	renderer.domElement.tabIndex = 1;
@@ -165,7 +163,6 @@ function init() {
 	secondRenderer.setPixelRatio( window.devicePixelRatio );
 	secondRenderer.setSize( window.innerWidth, window.innerHeight );
 	secondRenderer.setClearColor( 0x151c1f );
-	secondRenderer.outputEncoding = sRGBEncoding;
 
 	document.body.appendChild( secondRenderer.domElement );
 	secondRenderer.domElement.style.position = 'absolute';
@@ -191,7 +188,6 @@ function init() {
 	thirdPersonRenderer.setPixelRatio( window.devicePixelRatio );
 	thirdPersonRenderer.setSize( window.innerWidth, window.innerHeight );
 	thirdPersonRenderer.setClearColor( 0x0f1416 );
-	thirdPersonRenderer.outputEncoding = sRGBEncoding;
 
 	document.body.appendChild( thirdPersonRenderer.domElement );
 	thirdPersonRenderer.domElement.style.position = 'fixed';
@@ -234,12 +230,12 @@ function init() {
 	rayIntersect = new Group();
 
 	const rayIntersectMat = new MeshBasicMaterial( { color: 0xe91e63 } );
-	const rayMesh = new Mesh( new CylinderBufferGeometry( 0.25, 0.25, 6 ), rayIntersectMat );
+	const rayMesh = new Mesh( new CylinderGeometry( 0.25, 0.25, 6 ), rayIntersectMat );
 	rayMesh.rotation.x = Math.PI / 2;
 	rayMesh.position.z += 3;
 	rayIntersect.add( rayMesh );
 
-	const rayRing = new Mesh( new TorusBufferGeometry( 1.5, 0.2, 16, 100 ), rayIntersectMat );
+	const rayRing = new Mesh( new TorusGeometry( 1.5, 0.2, 16, 100 ), rayIntersectMat );
 	rayIntersect.add( rayRing );
 	scene.add( rayIntersect );
 	rayIntersect.visible = false;
@@ -671,7 +667,7 @@ function render() {
 	}
 
 	const cacheFullness = tiles.lruCache.itemList.length / tiles.lruCache.maxSize;
-	let str = `Downloading: ${ tiles.stats.downloading } Parsing: ${ tiles.stats.parsing } Visible: ${ tiles.group.children.length - 2 }`;
+	let str = `Downloading: ${ tiles.stats.downloading } Parsing: ${ tiles.stats.parsing } Visible: ${ tiles.visibleTiles.size }`;
 
 	if ( params.enableCacheDisplay ) {
 

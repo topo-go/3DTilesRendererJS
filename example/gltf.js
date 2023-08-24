@@ -5,13 +5,12 @@ import {
 	AmbientLight,
 	WebGLRenderer,
 	PerspectiveCamera,
-	sRGBEncoding,
 	PCFSoftShadowMap,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LoadingManager } from 'three';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 let camera, controls, scene, renderer;
 let dirLight;
@@ -30,7 +29,6 @@ function init() {
 	renderer.setClearColor( 0x151c1f );
 	renderer.shadowMap.enabled = true;
 	renderer.shadowMap.type = PCFSoftShadowMap;
-	renderer.outputEncoding = sRGBEncoding;
 
 	document.body.appendChild( renderer.domElement );
 
@@ -95,7 +93,7 @@ function init() {
 	const manager = new LoadingManager();
 	const gltfLoader = new GLTFLoader( manager );
 	const dracoLoader = new DRACOLoader( manager );
-	dracoLoader.setDecoderPath( 'https://unpkg.com/three@0.128.0/examples/js/libs/draco/gltf/' );
+	dracoLoader.setDecoderPath( 'https://unpkg.com/three@0.153.0/examples/jsm/libs/draco/gltf/' );
 	gltfLoader.setDRACOLoader( dracoLoader );
 	manager.addHandler( /\.gltf$/, gltfLoader );
 	manager.addHandler( /\.glb$/, gltfLoader );

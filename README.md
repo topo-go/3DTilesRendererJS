@@ -23,6 +23,8 @@ If a tile set or geometry does not load or render properly please make an issue!
 
 [Loading 3D tiles from Cesium Ion](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/ionExample.html)!
 
+[Loading 3D tiles from Google Photorealistic Tiles](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/googleMapsAerial.html)! (Personal [Google Tiles API Key](https://developers.google.com/maps/documentation/tile/3d-tiles) required)
+
 **Debug Pages**
 
 [B3DM Loading](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/b3dmExample.html)
@@ -153,6 +155,21 @@ loader.setDRACOLoader( dracoLoader );
 const tilesRenderer = new TilesRenderer( './path/to/tileset.json' );
 tilesRenderer.manager.addHandler( /\.gltf$/, loader );
 ```
+
+Adding support for DRACO decompression within the PNTS files.
+
+```js
+
+// Note the DRACO compression files need to be supplied via an explicit source.
+// We use unpkg here but in practice should be provided by the application.
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath( 'https://unpkg.com/three@0.123.0/examples/js/libs/draco/gltf/' );
+
+
+const tilesRenderer = new TilesRenderer( './path/to/tileset.json' );
+tilesRenderer.manager.addHandler( /\.drc$/, loader );
+```
+
 
 ## Loading from Cesium Ion
 
@@ -524,7 +541,7 @@ Disposes of all the tiles in the renderer. Calls dispose on all materials, textu
 
 _extends [TilesRenderer](#TilesRenderer)_
 
-Special variant of TilesRenderer that includes helpers for debugging and visualizing the various tiles in the tile set. Material overrides will not work as expected with this renderer.
+Special variant of TilesRenderer that includes helpers for debugging and visualizing the various tiles in the tile set. Material overrides will not work as expected with this renderer. The debug renderer includes additional logic and initialization code which can cause performance loss so it's recommended to only use this when needed.
 
 ### .colorMode
 
@@ -661,6 +678,50 @@ schedulingCallback = requestAnimationFrame : ( cb : Function ) => void
 ```
 
 A function used for scheduling when to run jobs next so more work doesn't happen in a single frame than there is time for -- defaults to the next frame. This should be overriden in scenarios where requestAnimationFrame is not reliable, such as when running in WebXR. See the VR demo for one example on how to handle this with WebXR.
+
+## GoogleTilesRenderer
+
+_extends [TilesRenderer](#TilesRenderer)_
+
+Variant of the TilesRenderer designed to easily support [Google's Photorealistic 3D Tiles API](https://cloud.google.com/blog/products/maps-platform/create-immersive-3d-map-experiences-photorealistic-3d-tiles). Handles adding api key to all requests, reading tile credits, and initializes tile set traversal options to reasonable defaults for the globe.
+
+### constructor
+
+```js
+constructor( apiKey: String )
+```
+
+Takes the Google Photorealistic Tiles API Key.
+
+### .getCreditsString
+
+```js
+getCreditsString(): String;
+```
+
+Returns a string of unique credits for all the tiles currently displayed.
+
+### .setLatLonToYUp
+
+```js
+setLatLonToYUp( lat: Number, lon: Number ): void;
+```
+
+Rotates and positions the local transformation of the tile group object so the surface of the globe ellipsoid at the specified latitude and longitude faces Y+, X+ points north, and Z+ points east and is centered at 0, 0, 0.
+
+## CesiumIonTilesRenderer
+
+_extends [TilesRenderer](#TilesRenderer)_
+
+Variant of TilesRenderer designed to easily support the [Cesium Ion API](https://cesium.com/learn/ion/rest-api/#section/Authentication). Handles initial url resolution, access tokens in the header, and query parameter additions.
+
+### constructor
+
+```js
+constructor( ionAssetId: String | Number, ionAccessToken: String )
+```
+
+Takes the Ion asset id and access token.
 
 ## LRUCache
 
