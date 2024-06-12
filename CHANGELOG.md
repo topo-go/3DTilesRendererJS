@@ -4,6 +4,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+### Added
+- `EXT_mesh_features` extension for glTF.
+
+## [0.3.33] - 2024.05.31
+### Fixed
+- Remove logged error when a tile set is aborted.
+- Adjusted raycast early exit behavior based on three.js r165.
+- EnvironmentControls: fix case where the dragging does not work from below
+- Remote glTF textures failing to load.
+
+## [0.3.32] - 2024.05.17
+### Added
+- EnvironmentControls: Add support for othographic zoom.
+- EnvironmentControls: Add "zoom speed" option.
+- PNTSLoader: Add `batchTable` to the returned points object.
+- Support for improved, early termination raycasting from three.js r165.
+
+### Fixed
+- Some cases where the camera jumped and drifted while reorienting the "up" direction.
+
+### Changed
+- EnvironmentControls: Changed default rotation speed.
+- Use `queueMicrotask` in place of `Promise.resolve()`.
+
+## [0.3.31] - 2024.03.25
+### Fixed
+- Ellipsoid.getPositionElevation not returning negative elevations.
+- EnvironmentControls: Enfoce a minimum elevation when computing horizon distance to ensure a reasonable far clip distance.
+- EnvironmentControls: Contructor arguments are no longer required.
+- EnvironmentControls: Detach now correctly removes the dom element reference.
+- GlobeControls: Functions without setting indices.
+
+### Added
+- EnvironmentControls: Add "fallbackPlane" and "useFallbackPlane" members so dragging works when there is no geometry under the mouse.
+
+## [0.3.30] - 2024.03.12
+### Fixed
+- EnvironmentControls and GlobeControls not zooming into the cursor when offset.
+
+## [0.3.29] - 2024.03.12
+### Fixed
+- EnvironmentControls and GlobeControls not working with a non-full page element.
+- FadeTilesRenderer improperly disposing of tiles causing unloaded textures to be rendered.
+
+## [0.3.28] - 2024.03.11
+### Fixed
+- Memory leak related to ImageBitmaps not being released on tile disposal.
+
+## [0.3.27] - 2024.03.06
+### Fixed
+- Fixed credit attribution string for GoogleTilesRenderer to align with requirements.
+- Fixed fade events not firing as expected in FadeEventManager.
+
+## [0.3.26] - 2024-02-29
+### Fixed
+- FadeTilesMixin.deleteCamera now correctly calls the parent function.
+- EnvironmentControls now dispatches events on zoom value change.
+
+## [0.3.25] - 2024-02-21
+### Changed
+- "getBounds" and "getOrientedBounds" functions have been renamed to "getBoundingBox" and "getOrientedBoundingBox".
+- GlobeControls will now set the camera near and far values to more tightly encapsuate the set of tiles visible until the horizon, limiting the amount of tiles to load.
+- GlobeControls now more intelligently sets the camera "near" value to avoid z fighting.
+
+### Fixed
+- Frustum and oriented bounding box functions now more correctly determines intersections instead of producing frequent false positives resulting in more tiles being loaded.
+
+## [0.3.24] - 2024-02-09
+### Added
+- Support for dispatched events to TilesRenderer and equivelent events for existing `.on*` callbacks.
+- EnvironmentControls and GlobeControls.
+- Fix inaccuracies in documentation.
+
+## [0.3.23] - 2024-01-09
+### Fixed
+- Case where Google tiles did not load to a further depth when a tile has no content and no children.
+
+## [0.3.22] - 2023.12.25
+### Added
+- DebugTilesRenderer: Support for visualizing the load order of tiles
+
+### Fixed
+- TilesRendererBase: Error log when using a 1.1-compatible tileset
+
+## [0.3.21] - 2023.09.27
+### Added
+- PNTSLoader: Support for `CONSTANT_RGBA`, `RGBA`, and `RGB565`.
+
 ## [0.3.20] - 2023.06.26
 ### Added
 - `CesiumIonTilesRenderer` for more convenient use of the ion API.
@@ -238,7 +327,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [0.1.6] - 2020-10-08
 ### Added
 - `batchTable` and `featureTable` fields onto loaded B3DM, I3DM, and PNTS scene objects directly.
-- `stopAtEmptyTiles` which defaults to false so tilesets correctly stop traversal at empty tiles.
+- `stopAtEmptyTiles` which defaults to true so tilesets correctly stop traversal at empty tiles.
 
 ### Changed
 - Tileset traversal now correctly stops at empty tiles if they do no meet the SSE requirement. Previous behavior can be retained for now by settings `stopAtEmptyTiles` to `false`.

@@ -5,25 +5,35 @@
 
 ![](./images/header-mars.png)
 
-Three.js renderer implementation for the [3D Tiles format](https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/specification/). The renderer supports most of the 3D Tiles spec features with a few exceptions. See [Issue #15](https://github.com/NASA-AMMOS/3DTilesRendererJS/issues/15) for information on which features are not yet implemented.
+Three.js renderer implementation for the [3D Tiles format](https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/specification/). The renderer supports most of the 3D Tiles spec features with a few exceptions. See the [Feature Complete Milestone](https://github.com/NASA-AMMOS/3DTilesRendererJS/milestone/1) for information on which features are not yet implemented.
 
 If a tile set or geometry does not load or render properly please make an issue! Example data is needed for adding and testing features.
 
 **Examples**
 
-[Dingo Gap Mars dataset with multiple tile sets](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/mars.html)!
+[Dingo Gap Mars dataset with multiple tile sets](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/mars.html)
 
-[Kitchen sink example with all options here](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/index.html)!
+[Kitchen sink example with all options here](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/index.html)
 
-[Custom material example here](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/customMaterial.html)!
+[Rendering in VR example here](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/vr.html)
 
-[Rendering shadows from offscreen tiles example here](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/offscreenShadows.html)!
+**External Tiles Providers**
 
-[Rendering in VR example here](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/vr.html)!
+_Personal [Google Tiles API Key](https://developers.google.com/maps/documentation/tile/3d-tiles) or [Cesium Ion API Key](https://cesium.com/platform/cesium-ion/) required_
 
-[Loading 3D tiles from Cesium Ion](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/ionExample.html)!
+[Cesium Ion 3D Tiles](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/ionExample.html)
 
-[Loading 3D tiles from Google Photorealistic Tiles](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/googleMapsAerial.html)! (Personal [Google Tiles API Key](https://developers.google.com/maps/documentation/tile/3d-tiles) required)
+[Google Photorealistic Tiles](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/googleMapsAerial.html)
+
+[Google Globe Tiles](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/googleMapsExample.html)
+
+**Customization**
+
+[Custom material example](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/customMaterial.html)
+
+[Rendering shadows from offscreen tiles example](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/offscreenShadows.html)
+
+[Tile fade transition](https://nasa-ammos.github.io/3DTilesRendererJS/example/bundle/fadingTiles.html)
 
 **Debug Pages**
 
@@ -56,6 +66,15 @@ import { TilesRenderer } from '3d-tiles-renderer';
 const tilesRenderer = new TilesRenderer( './path/to/tileset.json' );
 tilesRenderer.setCamera( camera );
 tilesRenderer.setResolutionFromRenderer( camera, renderer );
+tilesRenderer.addEventListener( 'load-tile-set', () => {
+
+	// optionally center the tile set in case it's far off center
+	const sphere = new Sphere();
+	tilesRenderer.getBoundingSphere( sphere );
+	tilesRenderer.position.copy( sphere.center ).multiplyScalar( - 1 );
+
+} );
+
 scene.add( tilesRenderer.group );
 
 renderLoop();
@@ -146,13 +165,14 @@ Adding support for DRACO decompression within the GLTF files that are transporte
 
 // Note the DRACO compression files need to be supplied via an explicit source.
 // We use unpkg here but in practice should be provided by the application.
+const tilesRenderer = new TilesRenderer( './path/to/tileset.json' );
+
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath( 'https://unpkg.com/three@0.123.0/examples/js/libs/draco/gltf/' );
 
-const loader = new GLTFLoader( tiles.manager );
+const loader = new GLTFLoader( tilesRenderer.manager );
 loader.setDRACOLoader( dracoLoader );
 
-const tilesRenderer = new TilesRenderer( './path/to/tileset.json' );
 tilesRenderer.manager.addHandler( /\.gltf$/, loader );
 ```
 
@@ -195,11 +215,11 @@ fetch( url, { mode: 'cors' } )
 
 		// Prefilter each model fetch by setting the cesium Ion version to the search
 		// parameters of the url.
-		tiles.onPreprocessURL = uri => {
+		tiles.preprocessURL = uri => {
 
 			uri = new URL( uri );
 			uri.searchParams.append( 'v', version );
-			return uri;
+			return uri.toString();
 
 		};
 
@@ -276,7 +296,23 @@ if ( intersects.length ) {
 
 ## TilesRenderer
 
-_extends [TilesRendererBase](https://github.com/NASA-AMMOS/3DTilesRendererJS/blob/master/src/base/TilesRendererBase.js), which can be used to implement a 3d tiles renderer in other engines_
+_extends `THREE.EventDispatcher`` & [TilesRendererBase](https://github.com/NASA-AMMOS/3DTilesRendererJS/blob/master/src/base/TilesRendererBase.js), which can be used to implement a 3d tiles renderer in other engines_
+
+### events
+
+```js
+// fired when a new root or child tile set is loaded
+{ type: 'load-tile-set', tileSet: Object, url: String }
+
+// fired when a tile model is loaded
+{ type: 'load-model', scene: THREE.Group, tile: Object }
+
+// fired when a tile model is disposed
+{ type: 'dispose-model', scene: THREE.Group, tile: Object }
+
+// fired when a tiles visibility changes
+{ type: 'tile-visibility-change', scene: THREE.Group, tile: Object }
+```
 
 ### .fetchOptions
 
@@ -348,10 +384,10 @@ If true then the `raycast` functions of the loaded tile objects are overriden to
 
 If you would like to manage raycasting against tiles yourself this behavior can be disabled if needed by setting `optizeRaycast` to false.
 
-### .onPreprocessURL
+### .preprocessURL
 
 ```js
-onPreprocessURL = null : ( uri : string | URL ) => string | URL;
+preprocessURL = null : ( uri : string | URL ) => string | URL;
 ```
 
 Function to preprocess the url for each individual tile geometry or child tile set to be loaded. If null then the url is used directly.
@@ -424,21 +460,21 @@ resetFailedTiles() : void
 
 If any tiles failed to load due to server or network issues then they will not be retried by automatically. This function clears all failed tile states so unloaded tiles can be retried again.
 
-### .getBounds
+### .getBoundingBox
 
 ```js
-getBounds( box : Box3 ) : boolean
+getBoundingBox( box : Box3 ) : boolean
 ```
 
-Sets `box` to the axis aligned root bounding box of the tile set in the [group](#group) frame. Returns `false` if the tile root was not loaded.
+Sets `box` to the axis aligned root bounding box of the tile set in the [group](#group) frame. Returns `false` if the tile root is not loaded and the bounding box cannot be set.
 
-### .getOrientedBounds
+### .getOrientedBoundingBox
 
 ```js
-getOrientedBounds( box : Box3, boxTransform : Matrix4 ) : boolean;
+getOrientedBoundingBox( box : Box3, boxTransform : Matrix4 ) : boolean;
 ```
 
-Sets `box` and `boxTransform` to the bounds and matrix that describe the oriented bounding box that encapsulates the root of the tile set. Returns `false` if the tile root was not loaded.
+Sets `box` and `boxTransform` to the bounds and matrix that describe the oriented bounding box that encapsulates the root of the tile set. Returns `false` if the tile root is not loaded and the bounding box cannot be set.
 
 ### .getBoundingSphere
 
@@ -446,7 +482,7 @@ Sets `box` and `boxTransform` to the bounds and matrix that describe the oriente
 getBoundingSphere( sphere : Sphere ) : boolean;
 ```
 
-Sets `sphere` to the bounding sphere that encapsulates the root of the tile set. Returns `false` if the tile root was not loaded.
+Sets `sphere` to the bounding sphere that encapsulates the root of the tile set. Returns `false` if the tile root is not loaded and the bounding sphere cannot be set.
 
 ### .hasCamera
 

@@ -9,13 +9,17 @@ import {
 	Matrix4,
 	Vector3,
 	Vector2,
-	Frustum,
-	LoadingManager
+	LoadingManager,
+	EventDispatcher,
+	REVISION,
 } from 'three';
 import { raycastTraverse, raycastTraverseFirstHit } from './raycastTraverse.js';
 import { readMagicBytes } from '../utilities/readMagicBytes.js';
 import { TileBoundingVolume } from './math/TileBoundingVolume.js';
+import { ExtendedFrustum } from './math/ExtendedFrustum.js';
 
+// In three.js r165 and higher raycast traversal can be ended early
+const REVISION_165 = parseInt( REVISION ) < 165;
 const INITIAL_FRUSTUM_CULLED = Symbol( 'INITIAL_FRUSTUM_CULLED' );
 const tempMat = new Matrix4();
 const tempMat2 = new Matrix4();
@@ -66,8 +70,9 @@ export class TilesRenderer extends TilesRendererBase {
 		this.cameraInfo = [];
 		this.activeTiles = new Set();
 		this.visibleTiles = new Set();
-		this._autoDisableRendererCulling = true;
 		this.optimizeRaycast = true;
+		this._autoDisableRendererCulling = true;
+		this._eventDispatcher = new EventDispatcher();
 
 		this.onLoadTileSet = null;
 		this.onLoadModel = null;
@@ -90,23 +95,65 @@ export class TilesRenderer extends TilesRendererBase {
 		} );
 		this.manager = manager;
 
-		// Setting up the override raycasting function to be used by
-		// 3D objects created by this renderer
-		const tilesRenderer = this;
-		this._overridenRaycast = function ( raycaster, intersects ) {
+		if ( REVISION_165 ) {
 
-			if ( ! tilesRenderer.optimizeRaycast ) {
+			// Setting up the override raycasting function to be used by
+			// 3D objects created by this renderer
+			const tilesRenderer = this;
+			this._overridenRaycast = function ( raycaster, intersects ) {
 
-				Object.getPrototypeOf( this ).raycast.call( this, raycaster, intersects );
+				if ( ! tilesRenderer.optimizeRaycast ) {
 
-			}
+					Object.getPrototypeOf( this ).raycast.call( this, raycaster, intersects );
 
-		};
+				}
+
+			};
+
+		}
+
+	}
+
+	addEventListener( ...args ) {
+
+		this._eventDispatcher.addEventListener( ...args );
+
+	}
+
+	hasEventListener( ...args ) {
+
+		this._eventDispatcher.hasEventListener( ...args );
+
+	}
+
+	removeEventListener( ...args ) {
+
+		this._eventDispatcher.removeEventListener( ...args );
+
+	}
+
+	dispatchEvent( ...args ) {
+
+		this._eventDispatcher.dispatchEvent( ...args );
 
 	}
 
 	/* Public API */
-	getBounds( target ) {
+	getBounds( ...args ) {
+
+		console.warn( 'TilesRenderer: getBounds has been renamed to getBoundingBox.' );
+		return this.getBoundingBox( ...args );
+
+	}
+
+	getOrientedBounds( ...args ) {
+
+		console.warn( 'TilesRenderer: getOrientedBounds has been renamed to getOrientedBoundingBox.' );
+		return this.getOrientedBoundingBox( ...args );
+
+	}
+
+	getBoundingBox( target ) {
 
 		if ( ! this.root ) {
 
@@ -128,7 +175,7 @@ export class TilesRenderer extends TilesRendererBase {
 
 	}
 
-	getOrientedBounds( targetBox, targetMatrix ) {
+	getOrientedBoundingBox( targetBox, targetMatrix ) {
 
 		if ( ! this.root ) {
 
@@ -293,18 +340,29 @@ export class TilesRenderer extends TilesRendererBase {
 		const pr = super.fetchTileSet( url, ...rest );
 		pr.then( json => {
 
-			if ( this.onLoadTileSet ) {
+			// Push this onto the end of the event stack to ensure this runs
+			// after the base renderer has placed the provided json where it
+			// needs to be placed and is ready for an update.
+			queueMicrotask( () => {
 
-				// Push this onto the end of the event stack to ensure this runs
-				// after the base renderer has placed the provided json where it
-				// needs to be placed and is ready for an update.
-				Promise.resolve().then( () => {
+				this.dispatchEvent( {
+					type: 'load-tile-set',
+					tileSet: json,
+					url,
+				} );
+
+				if ( this.onLoadTileSet ) {
 
 					this.onLoadTileSet( json, url );
 
-				} );
+				}
 
-			}
+			} );
+
+
+		} ).catch( () => {
+
+			// error is logged internally
 
 		} );
 		return pr;
@@ -336,7 +394,7 @@ export class TilesRenderer extends TilesRendererBase {
 
 			cameraInfo.push( {
 
-				frustum: new Frustum(),
+				frustum: new ExtendedFrustum(),
 				isOrthographic: false,
 				sseDenominator: - 1, // used if isOrthographic:false
 				position: new Vector3(),
@@ -430,10 +488,6 @@ export class TilesRenderer extends TilesRendererBase {
 
 			}
 
-		} else {
-
-			transform.identity();
-
 		}
 
 		if ( parentTile ) {
@@ -475,7 +529,8 @@ export class TilesRenderer extends TilesRendererBase {
 
 			scene: null,
 			geometry: null,
-			material: null,
+			materials: null,
+			textures: null,
 
 		};
 
@@ -509,10 +564,6 @@ export class TilesRenderer extends TilesRendererBase {
 
 			case 'y':
 				upAdjustment.makeRotationAxis( X_AXIS, Math.PI / 2 );
-				break;
-
-			case 'z':
-				upAdjustment.identity();
 				break;
 
 		}
@@ -631,12 +682,16 @@ export class TilesRenderer extends TilesRendererBase {
 			} );
 			updateFrustumCulled( scene, ! this.autoDisableRendererCulling );
 
-			// We handle raycasting in a custom way so remove it from here
-			scene.traverse( c => {
+			if ( REVISION_165 ) {
 
-				c.raycast = this._overridenRaycast;
+				// We handle raycasting in a custom way so remove it from here
+				scene.traverse( c => {
 
-			} );
+					c.raycast = this._overridenRaycast;
+
+				} );
+
+			}
 
 			const materials = [];
 			const geometry = [];
@@ -675,6 +730,12 @@ export class TilesRenderer extends TilesRendererBase {
 			cached.scene = scene;
 			cached.metadata = metadata;
 
+			this.dispatchEvent( {
+				type: 'load-model',
+				scene,
+				tile,
+			} );
+
 			if ( this.onLoadModel ) {
 
 				this.onLoadModel( scene, tile );
@@ -696,6 +757,23 @@ export class TilesRenderer extends TilesRendererBase {
 			const textures = cached.textures;
 			const parent = cached.scene.parent;
 
+			// dispose of any textures required by the mesh features extension
+			cached.scene.traverse( child => {
+
+				if ( child.userData.meshFeatures ) {
+
+					child.userData.meshFeatures.dispose();
+
+				}
+
+				if ( child.userData.structuralMetadata ) {
+
+					child.userData.structuralMetadata.dispose();
+
+				}
+
+			} );
+
 			for ( let i = 0, l = geometry.length; i < l; i ++ ) {
 
 				geometry[ i ].dispose();
@@ -711,6 +789,13 @@ export class TilesRenderer extends TilesRendererBase {
 			for ( let i = 0, l = textures.length; i < l; i ++ ) {
 
 				const texture = textures[ i ];
+
+				if ( texture.image instanceof ImageBitmap ) {
+
+					texture.image.close();
+
+				}
+
 				texture.dispose();
 
 			}
@@ -720,6 +805,12 @@ export class TilesRenderer extends TilesRendererBase {
 				parent.remove( cached.scene );
 
 			}
+
+			this.dispatchEvent( {
+				type: 'dispose-model',
+				scene: cached.scene,
+				tile,
+			} );
 
 			if ( this.onDisposeModel ) {
 
@@ -758,6 +849,13 @@ export class TilesRenderer extends TilesRendererBase {
 			visibleTiles.delete( tile );
 
 		}
+
+		this.dispatchEvent( {
+			type: 'tile-visibility-change',
+			scene,
+			tile,
+			visible,
+		} );
 
 		if ( this.onTileVisibilityChange ) {
 

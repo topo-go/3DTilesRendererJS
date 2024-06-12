@@ -10,6 +10,7 @@ import {
 	RANDOM_COLOR,
 	RANDOM_NODE_COLOR,
 	CUSTOM_COLOR,
+	LOAD_ORDER,
 	GLTFCesiumRTCExtension,
 } from '../src/index.js';
 import {
@@ -30,7 +31,7 @@ import {
 	OrthographicCamera,
 	Sphere,
 } from 'three';
-import { FlyOrbitControls } from './FlyOrbitControls.js';
+import { FlyOrbitControls } from './src/controls/FlyOrbitControls.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -284,7 +285,8 @@ function init() {
 		IS_LEAF,
 		RANDOM_COLOR,
 		RANDOM_NODE_COLOR,
-		CUSTOM_COLOR
+		CUSTOM_COLOR,
+		LOAD_ORDER,
 
 	} );
 	debug.open();
@@ -514,7 +516,7 @@ function animate() {
 
 	if ( tiles.root && tiles.root.boundingVolume.region ) {
 
-		tiles.getOrientedBounds( box, geospatialRotationParent.matrix );
+		tiles.getOrientedBoundingBox( box, geospatialRotationParent.matrix );
 		geospatialRotationParent.matrix.decompose( geospatialRotationParent.position, geospatialRotationParent.quaternion, geospatialRotationParent.scale );
 		geospatialRotationParent.position.set( 0, 0, 0 );
 		geospatialRotationParent.quaternion.invert();
@@ -536,7 +538,7 @@ function animate() {
 	offsetParent.updateMatrixWorld( false );
 
 	// update tiles center
-	if ( tiles.getBounds( box ) ) {
+	if ( tiles.getBoundingBox( box ) ) {
 
 		box.getCenter( tiles.group.position );
 		tiles.group.position.multiplyScalar( - 1 );

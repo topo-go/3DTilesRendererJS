@@ -1,39 +1,39 @@
-import { GeoUtils, WGS84_ELLIPSOID, WGS84_RADIUS, DebugGoogleTilesRenderer as GoogleTilesRenderer } from '../src/index.js';
+import {
+	WGS84_ELLIPSOID,
+	GeoUtils,
+	GlobeControls,
+	DebugGoogleTilesRenderer as GoogleTilesRenderer,
+} from '../src/index.js';
 import {
 	Scene,
 	WebGLRenderer,
 	PerspectiveCamera,
-	Raycaster,
-	Box3,
 	MathUtils,
+	OrthographicCamera,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min.js';
-import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { estimateBytesUsed } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
+import { CameraTransitionManager } from './src/CameraTransitionManager.js';
 
-import { MapControls } from './src/lib/MapControls.js';
-
-let camera, controls, scene, renderer, tiles;
+let controls, scene, renderer, tiles, transition;
 let statsContainer, stats;
-
-const raycaster = new Raycaster();
-raycaster.firstHitOnly = true;
 
 const apiKey = localStorage.getItem( 'googleApiKey' ) ?? 'put-your-api-key-here';
 
 const params = {
 
-	'enableUpdate': true,
-	'enableCacheDisplay': false,
-	'enableRendererStats': false,
-	'apiKey': apiKey,
+	orthographic: false,
 
-	'displayBoxBounds': false,
-	'displaySphereBounds': false,
-	'displayRegionBounds': false,
+	enableCacheDisplay: false,
+	enableRendererStats: false,
+	apiKey: apiKey,
+
 	'reload': reinstantiateTiles,
+	displayBoxBounds: false,
+	displayRegionBounds: false,
 
 };
 
@@ -41,8 +41,6 @@ init();
 animate();
 
 function reinstantiateTiles() {
-
-	localStorage.setItem( 'googleApiKey', params.apiKey );
 
 	if ( tiles ) {
 
@@ -52,8 +50,11 @@ function reinstantiateTiles() {
 
 	}
 
+	localStorage.setItem( 'googleApiKey', params.apiKey );
+
 	tiles = new GoogleTilesRenderer( params.apiKey );
 	tiles.group.rotation.x = - Math.PI / 2;
+	tiles.errorTarget = 50;
 
 	// Note the DRACO compression files need to be supplied via an explicit source.
 	// We use unpkg here but in practice should be provided by the application.
@@ -66,8 +67,10 @@ function reinstantiateTiles() {
 	tiles.manager.addHandler( /\.gltf$/, loader );
 	scene.add( tiles.group );
 
-	tiles.setResolutionFromRenderer( camera, renderer );
-	tiles.setCamera( camera );
+	tiles.setResolutionFromRenderer( transition.camera, renderer );
+	tiles.setCamera( transition.camera );
+
+	controls.setTilesRenderer( tiles );
 
 }
 
@@ -81,15 +84,28 @@ function init() {
 
 	document.body.appendChild( renderer.domElement );
 
-	camera = new PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 160000000 );
-	camera.position.set( 7326000, 10279000, - 823000 );
+	transition = new CameraTransitionManager();
+	transition.addEventListener( 'camera-changed', ( { camera, prevCamera } ) => {
+
+		tiles.deleteCamera( prevCamera );
+		tiles.setCamera( camera );
+		controls.setCamera( camera );
+
+	} );
+
+	transition.perspectiveCamera = new PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 160000000 );
+	transition.perspectiveCamera.position.set( 4800000, 2570000, 14720000 );
+	transition.perspectiveCamera.lookAt( 0, 0, 0 );
+
+	transition.orthographicCamera = new OrthographicCamera( - 1e4, 1e4, 1e4, - 1e4, 1, 160000000 );
+	transition.orthographicCamera.zoom = 1.5 * 1e-3;
+	transition.orthographicCamera.position.set( 4800000, 2570000, 14720000 );
+	transition.orthographicCamera.lookAt( 0, 0, 0 );
+
+	transition.camera = transition.perspectiveCamera;
 
 	// controls
-	controls = new MapControls( camera, renderer.domElement );
-	controls.minDistance = 1;
-	controls.maxDistance = Infinity;
-	controls.minPolarAngle = Math.PI / 4;
-	controls.target.set( 0, 0, 1 );
+	controls = new GlobeControls( scene, transition.camera, renderer.domElement, null );
 
 	reinstantiateTiles();
 
@@ -100,33 +116,24 @@ function init() {
 	const gui = new GUI();
 	gui.width = 300;
 
+	// gui.add( params, 'orthographic' ).onChange( v => {
+
+	// 	transition.fixedPoint.copy( controls.pivotPoint );
+	// 	transition.toggle();
+
+	// } );
+
 	const mapsOptions = gui.addFolder( 'Google Tiles' );
 	mapsOptions.add( params, 'apiKey' );
 	mapsOptions.add( params, 'reload' );
-	mapsOptions.open();
 
 	const debug = gui.addFolder( 'Debug Options' );
 	debug.add( params, 'displayBoxBounds' );
-	debug.add( params, 'displaySphereBounds' );
 	debug.add( params, 'displayRegionBounds' );
 
 	const exampleOptions = gui.addFolder( 'Example Options' );
-	exampleOptions.add( params, 'enableUpdate' ).onChange( v => {
-
-		tiles.parseQueue.autoUpdate = v;
-		tiles.downloadQueue.autoUpdate = v;
-
-		if ( v ) {
-
-			tiles.parseQueue.scheduleJobRun();
-			tiles.downloadQueue.scheduleJobRun();
-
-		}
-
-	} );
 	exampleOptions.add( params, 'enableCacheDisplay' );
 	exampleOptions.add( params, 'enableRendererStats' );
-	gui.open();
 
 	statsContainer = document.createElement( 'div' );
 	document.getElementById( 'info' ).appendChild( statsContainer );
@@ -144,44 +151,18 @@ function init() {
 
 function onWindowResize() {
 
-	camera.aspect = window.innerWidth / window.innerHeight;
+	const { perspectiveCamera, orthographicCamera } = transition;
+	const aspect = window.innerWidth / window.innerHeight;
+
+	perspectiveCamera.aspect = aspect;
+	perspectiveCamera.updateProjectionMatrix();
+
+	orthographicCamera.left = - orthographicCamera.top * aspect;
+	orthographicCamera.right = - orthographicCamera.left;
+	orthographicCamera.updateProjectionMatrix();
+
 	renderer.setSize( window.innerWidth, window.innerHeight );
-
-	camera.updateProjectionMatrix();
 	renderer.setPixelRatio( window.devicePixelRatio );
-
-}
-
-function updateControls() {
-
-	const raycaster = new Raycaster();
-	raycaster.ray.origin.copy( controls.target ).normalize().multiplyScalar( WGS84_RADIUS * 1.5 );
-	raycaster.ray.direction.copy( raycaster.ray.origin ).normalize().multiplyScalar( - 1 );
-	raycaster.firstHitOnly = true;
-
-	const hit = raycaster.intersectObject( scene, true )[ 0 ];
-	if ( hit ) {
-
-		controls.target.copy( hit.point );
-
-	} else {
-
-		controls.target.normalize().multiplyScalar( WGS84_RADIUS );
-
-	}
-	controls.panPlane.copy( controls.target ).normalize();
-
-	const dist = camera.position.length();
-	camera.position.copy( controls.target ).normalize().multiplyScalar( dist );
-	camera.lookAt( controls.target );
-	controls.update();
-
-	const box = new Box3();
-	tiles.getBounds( box );
-
-	camera.far = dist;
-	camera.near = Math.max( 1, dist - Math.max( ...box.min, ...box.max ) );
-	camera.updateProjectionMatrix();
 
 }
 
@@ -193,14 +174,18 @@ function updateHash() {
 
 	}
 
+	const camera = transition.camera;
 	const res = {};
 	const mat = tiles.group.matrixWorld.clone().invert();
-	const vec = controls.target.clone().applyMatrix4( mat );
+	const vec = camera.position.clone().applyMatrix4( mat );
 	WGS84_ELLIPSOID.getPositionToCartographic( vec, res );
 
 	res.lat *= MathUtils.RAD2DEG;
 	res.lon *= MathUtils.RAD2DEG;
-	window.history.replaceState( undefined, undefined, `#${ res.lat.toFixed( 4 ) },${ res.lon.toFixed( 4 ) }` );
+
+	const elevation = WGS84_ELLIPSOID.getPositionElevation( vec );
+
+	window.history.replaceState( undefined, undefined, `#${ res.lat.toFixed( 4 ) },${ res.lon.toFixed( 4 ) },${ elevation.toFixed( 4 ) }` );
 
 }
 
@@ -208,18 +193,20 @@ function initFromHash() {
 
 	const hash = window.location.hash.replace( /^#/, '' );
 	const tokens = hash.split( /,/g ).map( t => parseFloat( t ) );
-	if ( tokens.length !== 2 || tokens.findIndex( t => Number.isNaN( t ) ) !== - 1 ) {
+	if ( tokens.length < 3 || tokens.findIndex( t => Number.isNaN( t ) ) !== - 1 ) {
 
 		return;
 
 	}
 
-	const [ lat, lon ] = tokens;
-	WGS84_ELLIPSOID.getCartographicToPosition( lat * MathUtils.DEG2RAD, lon * MathUtils.DEG2RAD, 0, controls.target );
+	//todo it looks like we can't init under a certain height, I assume it has something to do with the first tile loaded and collision
+	const [ lat, lon, height ] = tokens;
+	const camera = transition.camera;
+	WGS84_ELLIPSOID.getCartographicToPosition( lat * MathUtils.DEG2RAD, lon * MathUtils.DEG2RAD, height, camera.position );
 
 	tiles.group.updateMatrixWorld();
-	controls.target.applyMatrix4( tiles.group.matrixWorld );
-	updateControls();
+	camera.position.applyMatrix4( tiles.group.matrixWorld );
+	camera.lookAt( 0, 0, 0 );
 
 }
 
@@ -229,35 +216,40 @@ function animate() {
 
 	if ( ! tiles ) return;
 
-	updateControls();
+	transition.update();
+	controls.enabled = ! transition.animating;
+	controls.update();
+
+	const camera = transition.camera;
+
+	window.TRANS = transition;
 
 	// update options
 	tiles.setResolutionFromRenderer( camera, renderer );
 	tiles.setCamera( camera );
+	tiles.displayBoxBounds = params.displayBoxBounds;
+	tiles.displayRegionBounds = params.displayRegionBounds;
 
 	// update tiles
-	if ( params.enableUpdate ) {
+	camera.updateMatrixWorld();
+	tiles.update();
 
-		camera.updateMatrixWorld();
-		tiles.update();
-
-	}
-
-	render();
+	renderer.render( scene, camera );
 	stats.update();
+
+	updateHtml();
 
 }
 
-function render() {
-
-	// render primary view
-	renderer.render( scene, camera );
+function updateHtml() {
 
 	// render html text updates
 	const cacheFullness = tiles.lruCache.itemList.length / tiles.lruCache.maxSize;
-	let str = `Downloading: ${ tiles.stats.downloading } Parsing: ${ tiles.stats.parsing } Visible: ${ tiles.visibleTiles.size }`;
+	let str = '';
 
 	if ( params.enableCacheDisplay ) {
+
+		str += `Downloading: ${ tiles.stats.downloading } Parsing: ${ tiles.stats.parsing } Visible: ${ tiles.visibleTiles.size }<br/>`;
 
 		const geomSet = new Set();
 		tiles.traverse( tile => {
@@ -282,10 +274,10 @@ function render() {
 		let count = 0;
 		geomSet.forEach( g => {
 
-			count += BufferGeometryUtils.estimateBytesUsed( g );
+			count += estimateBytesUsed( g );
 
 		} );
-		str += `<br/>Cache: ${ ( 100 * cacheFullness ).toFixed( 2 ) }% ~${ ( count / 1000 / 1000 ).toFixed( 2 ) }mb`;
+		str += `Cache: ${ ( 100 * cacheFullness ).toFixed( 2 ) }% ~${ ( count / 1000 / 1000 ).toFixed( 2 ) }mb<br/>`;
 
 	}
 
@@ -293,7 +285,7 @@ function render() {
 
 		const memory = renderer.info.memory;
 		const programCount = renderer.info.programs.length;
-		str += `<br/>Geometries: ${ memory.geometries } Textures: ${ memory.textures } Programs: ${ programCount }`;
+		str += `Geometries: ${ memory.geometries } Textures: ${ memory.textures } Programs: ${ programCount }`;
 
 	}
 
@@ -303,15 +295,11 @@ function render() {
 
 	}
 
-	if ( tiles ) {
+	const mat = tiles.group.matrixWorld.clone().invert();
+	const vec = transition.camera.position.clone().applyMatrix4( mat );
 
-		const mat = tiles.group.matrixWorld.clone().invert();
-		const vec = camera.position.clone().applyMatrix4( mat );
-
-		const res = {};
-		WGS84_ELLIPSOID.getPositionToCartographic( vec, res );
-		document.getElementById( 'credits' ).innerText = GeoUtils.toLatLonString( res.lat, res.lon ) + '\n' + tiles.getCreditsString();
-
-	}
+	const res = {};
+	WGS84_ELLIPSOID.getPositionToCartographic( vec, res );
+	document.getElementById( 'credits' ).innerText = GeoUtils.toLatLonString( res.lat, res.lon ) + '\n' + tiles.getCreditsString();
 
 }

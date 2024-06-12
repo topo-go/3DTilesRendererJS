@@ -1,4 +1,4 @@
-import { Vector3, Spherical } from 'three';
+import { Vector3, Spherical, MathUtils, Ray, Matrix4, Sphere } from 'three';
 import { swapToGeoFrame, latitudeToSphericalPhi } from './GeoUtils.js';
 
 const _spherical = new Spherical();
@@ -6,11 +6,15 @@ const _norm = new Vector3();
 const _vec = new Vector3();
 const _vec2 = new Vector3();
 const _vec3 = new Vector3();
+const _matrix = new Matrix4();
+const _sphere = new Sphere();
 
 const _vecX = new Vector3();
 const _vecY = new Vector3();
 const _vecZ = new Vector3();
 const _pos = new Vector3();
+
+const _ray = new Ray();
 
 const EPSILON12 = 1e-12;
 const CENTER_EPS = 0.1;
@@ -20,6 +24,27 @@ export class Ellipsoid {
 	constructor( x = 1, y = 1, z = 1 ) {
 
 		this.radius = new Vector3( x, y, z );
+
+	}
+
+	intersectRay( ray, target ) {
+
+		_matrix.makeScale( ...this.radius ).invert();
+		_sphere.center.set( 0, 0, 0 );
+		_sphere.radius = 1;
+
+		_ray.copy( ray ).applyMatrix4( _matrix );
+		if ( _ray.intersectSphere( _sphere, target ) ) {
+
+			_matrix.makeScale( ...this.radius );
+			target.applyMatrix4( _matrix );
+			return target;
+
+		} else {
+
+			return null;
+
+		}
 
 	}
 
@@ -183,9 +208,9 @@ export class Ellipsoid {
 			// "denominator" here refers to the use of this expression in the velocity and acceleration
 			// computations in the sections to follow.
 			denominator =
-			  	x2 * xMultiplier3 * invRadiusSqX +
-			  	y2 * yMultiplier3 * invRadiusSqY +
-			  	z2 * zMultiplier3 * invRadiusSqZ;
+				x2 * xMultiplier3 * invRadiusSqX +
+				y2 * yMultiplier3 * invRadiusSqY +
+				z2 * zMultiplier3 * invRadiusSqZ;
 
 			const derivative = - 2.0 * denominator;
 			correction = func / derivative;
@@ -197,6 +222,41 @@ export class Ellipsoid {
 			pos.y * yMultiplier,
 			pos.z * zMultiplier
 		);
+
+	}
+
+	calculateHorizonDistance( latitude, elevation ) {
+
+		// from https://aty.sdsu.edu/explain/atmos_refr/horizon.html
+		// OG = sqrt ( 2 R h + h2 ) .
+		const effectiveRadius = this.calculateEffectiveRadius( latitude );
+		return Math.sqrt( 2 * effectiveRadius * elevation + elevation ** 2 );
+
+	}
+
+	calculateEffectiveRadius( latitude ) {
+
+		// This radius represents the distance from the center of the ellipsoid to the surface along the normal at the given latitude.
+		// from https://en.wikipedia.org/wiki/Earth_radius#Prime_vertical
+		// N = a / sqrt(1 - e^2 * sin^2(phi))
+		const semiMajorAxis = this.radius.x;
+		const semiMinorAxis = this.radius.z;
+		const eSquared = 1 - ( semiMinorAxis ** 2 / semiMajorAxis ** 2 );
+		const phi = latitude * MathUtils.DEG2RAD;
+
+		const sinPhiSquared = Math.sin( phi ) ** 2;
+		const N = semiMajorAxis / Math.sqrt( 1 - eSquared * sinPhiSquared );
+		return N;
+
+	}
+
+	getPositionElevation( pos ) {
+
+		// logic from "getPositionToCartographic"
+		this.getPositionToSurfacePoint( pos, _vec );
+
+		const heightDelta = _vec2.subVectors( pos, _vec );
+		return Math.sign( heightDelta.dot( pos ) ) * heightDelta.length();
 
 	}
 
