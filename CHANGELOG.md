@@ -5,8 +5,152 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Changed
+- Increased default `downloadQueue` max jobs from 4 to 10.
+
+## [0.3.41] - 2024.11.07
 ### Added
-- `EXT_mesh_features` extension for glTF.
+- R3F CameraTransition component to r3f export.
+- CameraTransitionManager to core.
+
+### Fixed
+- Added name field to "UpdateOnChangePlugin".
+- CameraTransitionManager: Adjust the calculation for the near plane distance to avoid clipping in some cases.
+
+### Change
+- Revert change that would cause the root tiles to "trickle" in over time if the root is empty and uses an "ADD" refinement. Tiles will now only render once a full set of child tiles can be rendered.
+- Update "BatchedTilesPlugin" to rely on three.js r170, leverage new copy capabilities.
+- TilesRenderer plugins and GLTF Extensions have been moved to `3d-tiles-renderer/plugins` export path.
+
+## [0.3.40] - 2024.10.29
+### Added
+- I3DMLoader: Add support for EAST_NORTH_UP semantic.
+- R3F TilesRenderer: Added `group` property for passing react properties to the root tile set object.
+- R3F `<CompassGizmo>` component.
+
+### Changed
+- Slightly modified the traversal algorithm to not require loaded content (and therefore for content to exist) in order to trigger child tiles to load.
+- GlobeControls: renamed "updateClipPlanes" to "adjustCamera".
+- CameraTransitionManager: added "autoSync" and "syncCameras" function.
+- GlobeControls: Adjust behavior of zoomed out rotation to keep the grabbed point under the pointer.
+
+### Fixed
+- EnvironmentControls: Assign the current camera to the raycaster.
+- Typescript definitions for TilesRenderer.
+- Case where the closest hit was not returned with "firstHitOnly" raycasting.
+- R3F TilesRenderer: Fix case where the tiles renderer context would not trigger an update when options changed.
+- UpdateOnChangePlugin: Fix case where tiles would not update correctly if plugin was added after cameras.
+- EnvironmentControls: Correctly mark "wheel" event as non-passive.
+
+## [0.3.39] - 2024.10.15
+### Added
+- `ReorientationPlugin` and `GLTFExtensionsPlugin`.
+- Ability to remove plugins via the `unregisterPlugin` function.
+- Support for octree subdivision to implicit tiling.
+- Initial `BatchedTilePlugin` implementation to examples.
+- Initial support for `@react-three/fiber` with component implementations exported as `3d-tiles-renderer/r3f`. See the r3f docs for more information.
+
+### Changed
+- LRUCache minSize and maxSize variables to default to 6000, 8000.
+- Added `getAttributions` function, deprecated `getCreditsString` function.
+- GoogleCloudAuthPlugin: Use the photorealistic tiles url if a user has not provided one.
+- GoogleCloudAuthPlugin: Modify the tiles renderer to use recommended settings for Google Photorealistic Tiles by default.
+- Deprecated GooglePhotorealisticTilesRenderer.
+- Improve EnvironmentControls momementum thresholds so movement stops sooner.
+
+### Fixed
+- Case where tile set scale was incorrectly used when computed screenspace error.
+- Case where `setTileVisibility` could get called asymmetrically.
+- Case where `TilesFadePlugin` would hold on to scene geometry after disposal.
+
+## [0.3.38] - 2024.09.30
+### Added
+- BatchTable: Added "getPropertyArray".
+- GoogleCloudAuthPlugin, CesiumIonAuthPlugin: added "autoRefreshToken" option to enable automatically refreshing the token when requests fail due to timeout.
+
+### Fixed
+- Fixed type definition.
+- GlobeControls, EnvironmentControls: Account for near and far camera clip distances.
+- I3DMLoader: Fix cases where external files may not be loaded correctly.
+- Documentation typo: `maxByteSize` -> `maxBytesSize`.
+- Documented that LRUCache's `maxByteSize` and `minByteSize` are only compatible with three.js >= r166
+- Environment / GlobeControls: Fixed the pivot point mesh appearing when controls are disabled.
+- Case where LRUCache could cause tiles to load repeatedly.
+
+## [0.3.37] - 2024.08.27
+### Added
+- TilesOverlayPlugin: Added support for waiting until textures finish loading to display.
+- BatchTable: `count` field to get the number of id / entries.
+- I3DMLoader: Added support for `RTC_CENTER` feature.
+- TilesRenderer: Added initial support for implicit tiling.
+- LRUCache: Support for setting the min and max byte size for the cache which accounts for geometry and texture sizes.
+- Plugins: Added "UpdateOnChangePlugin" to the examples folder.
+- EnvironmentControls: Added "enableDamping" option for inertial animation.
+- Ellipsoid: Added "getEastNorthUpAxes".
+- Ellipsoid: Added "getAzElRollFromRotationMatrix" and "getRotationMatrixFromAzElRoll"
+- TilesRendererBase: Tiles are now queued and sorted before triggering load to avoid only a single tile set branch loading and filling up the lru cache.
+
+### Changed
+- TilesOverlayPlugin: Changed constructor to take options object, instead.
+- TilesRenderer: Removed `loadSiblings` option.
+- TilesRenderer: Removed `stopAtEmptyTiles` option.
+- LRUCache: Tiles continue to be unloaded even when the tiles renderer update function has not been called.
+- TilesRenderer: Deprecate "preprocessURL" function.
+- Ellipsoid: Renamed "constructLatLonFrame" to "getEastNorthUpFrame".
+- Ellipsoid: "getNorthernTangent" function has been deprecated.
+
+### Fixed
+- GlobeControls: cases where the camera far clip plane was set too close causing some far tiles to not display.
+- GlobeControls: When zooming out the amount that the camera automatically orients is now based in part on zoom amount.
+- TilesRenderer: Adjust tile traversal behavior so child tiles of "ADD" refinement are not forced to load.
+- GlobeControls: Zoomed-out ellipsoid rotation is now scaled based on camera parameters and ellipsoid size.
+- I3DMLoader: `SCALE` and `SCALE_NON_UNIFORM` are now both applied when present.
+- I3DMLoader: Instances now work correctly when parent group transforms are applied.
+- EnvironmentControls: Fixed case where zoom would not work if the mouse had not been moved.
+- TilesRenderer: Fix case where raycasting could throw an error.
+
+## [0.3.36] - 2024.07.25
+### Added
+- `tiles-load-start` and `tiles-load-end` callback indicating when tile loading has completed finished.
+- `camera-add`, `camera-delete`, `update-before`, `update-after` events.
+- Initial implementation of plugin system.
+- TileCompressionPlugin to examples for lowering memory usage.
+- `GoogleCloudAuthPlugin` and `CesiumIonAuthPlugin` to enable fetching data from the associated APIs.
+- Added `GooglePhotoRealisticTilesRenderer` class.
+- Added support for the `3DTILES_batch_table_hierarchy` extension.
+
+### Fixed
+- CameraTransitionManager: Variety of cases relating to negative orthographic camera "near" values.
+- GlobeControls: Speed change when transitioning between near and far behavior.
+- GlobeControls: Behavior now relies on camera field of view.
+- GlobeControls: Zooming out from the horizon no longer spins the globe.
+- GlobeControls: Add support for orthographi camera.
+- Remove unnecessary matrix instantiation during tiles parse.
+- `getBoundingBox` and `getOrientedBoundingBox` returning an incorrect condition when no bounding volume is present.
+- Fix case where an incorrect SSE metric was produced when tiles used non-uniform scales with oriented bounding box volumes.
+- Fix case where potentially incorrect raycast results were produced when tiles used non-uniform scales with oriented bounding box volumes.
+- GLTFStructureMetadata extension exits gracefully if no extension is present.
+
+### Changed
+- CesiumIonTilesRenderer: Will immediately load the tile set after resolving credentials.
+- Examples FadeTilesRenderer has been changed to a plugin.
+- Deprecated `GoogleTilesRenderer` and `CesiumIonTilesRenderer` in favor of using the new authentication plugins.
+- Loaders: ".load" function has been renamed to ".loadAsync".
+- Deprecated `onLoadTileset`, `onLoadModel`, `onDisposeModel`, and `onTileVisibilityChange` in favor of their event equivalents.
+- LRUCache: "unloadPriorityCallback" has been changted to take two tile arguments to sort instead of one.
+- DebugTilesRenderer has been deprecated in favor of the "DebugTilesPlugin".
+- LRU Cache unload priority function now unloads deepest tiles first, then least recently used, then non-external tile sets.
+
+## [0.3.35] - 2024.06.25
+### Fixed
+- Lint rules causing build failures.
+
+## [0.3.34] - 2024.06.18
+### Added
+- Export `EXT_mesh_features` & `EXT_structural_metadata` extensions for glTF.
+
+### Fixed
+- Syntax errors causing failure to import in some cases.
 
 ## [0.3.33] - 2024.05.31
 ### Fixed

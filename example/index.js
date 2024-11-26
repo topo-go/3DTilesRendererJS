@@ -1,5 +1,5 @@
 import {
-	DebugTilesRenderer as TilesRenderer,
+	TilesRenderer,
 	NONE,
 	SCREEN_ERROR,
 	GEOMETRIC_ERROR,
@@ -11,8 +11,12 @@ import {
 	RANDOM_NODE_COLOR,
 	CUSTOM_COLOR,
 	LOAD_ORDER,
+} from '3d-tiles-renderer';
+import {
+	DebugTilesPlugin,
+	ImplicitTilingPlugin,
 	GLTFCesiumRTCExtension,
-} from '../src/index.js';
+} from '3d-tiles-renderer/plugins';
 import {
 	Scene,
 	DirectionalLight,
@@ -64,8 +68,6 @@ const params = {
 	errorTarget: 6,
 	errorThreshold: 60,
 	maxDepth: 15,
-	loadSiblings: true,
-	stopAtEmptyTiles: true,
 	displayActiveTiles: false,
 	resolutionScale: 1.0,
 
@@ -95,6 +97,8 @@ function reinstantiateTiles() {
 	}
 
 	tiles = new TilesRenderer( url );
+	tiles.registerPlugin( new DebugTilesPlugin() );
+	tiles.registerPlugin( new ImplicitTilingPlugin() );
 
 	// Note the DRACO compression files need to be supplied via an explicit source.
 	// We use unpkg here but in practice should be provided by the application.
@@ -208,7 +212,7 @@ function init() {
 	controls.maxDistance = 5000;
 
 	// lights
-	const dirLight = new DirectionalLight( 0xffffff );
+	const dirLight = new DirectionalLight( 0xffffff, 4 );
 	dirLight.position.set( 1, 2, 3 );
 	scene.add( dirLight );
 
@@ -261,8 +265,6 @@ function init() {
 	gui.width = 300;
 
 	const tileOptions = gui.addFolder( 'Tiles Options' );
-	tileOptions.add( params, 'loadSiblings' );
-	tileOptions.add( params, 'stopAtEmptyTiles' );
 	tileOptions.add( params, 'displayActiveTiles' );
 	tileOptions.add( params, 'errorTarget' ).min( 0 ).max( 50 );
 	tileOptions.add( params, 'errorThreshold' ).min( 0 ).max( 1000 );
@@ -422,7 +424,7 @@ function onPointerUp( e ) {
 	if ( results.length ) {
 
 		const object = results[ 0 ].object;
-		const info = tiles.getTileInformationFromActiveObject( object );
+		const info = tiles.getPluginByName( 'DEBUG_TILES_PLUGIN' ).getTileInformationFromActiveObject( object );
 
 		let str = '';
 		for ( const key in info ) {
@@ -479,15 +481,16 @@ function animate() {
 	// update options
 	tiles.errorTarget = params.errorTarget;
 	tiles.errorThreshold = params.errorThreshold;
-	tiles.loadSiblings = params.loadSiblings;
 	tiles.optimizeRaycast = params.optimizeRaycast;
-	tiles.stopAtEmptyTiles = params.stopAtEmptyTiles;
 	tiles.displayActiveTiles = params.displayActiveTiles;
 	tiles.maxDepth = params.maxDepth;
-	tiles.displayBoxBounds = params.displayBoxBounds;
-	tiles.displaySphereBounds = params.displaySphereBounds;
-	tiles.displayRegionBounds = params.displayRegionBounds;
-	tiles.colorMode = parseFloat( params.colorMode );
+
+	// update plugin
+	const plugin = tiles.getPluginByName( 'DEBUG_TILES_PLUGIN' );
+	plugin.displayBoxBounds = params.displayBoxBounds;
+	plugin.displaySphereBounds = params.displaySphereBounds;
+	plugin.displayRegionBounds = params.displayRegionBounds;
+	plugin.colorMode = parseFloat( params.colorMode );
 
 	if ( params.orthographic ) {
 

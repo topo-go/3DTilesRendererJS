@@ -1,4 +1,5 @@
-import { SphereHelper, EllipsoidRegionLineHelper, EllipsoidRegionHelper } from '../src/index.js';
+import { SphereHelper } from '../src/plugins/three/objects/SphereHelper.js';
+import { EllipsoidRegionHelper, EllipsoidRegionLineHelper } from '../src/plugins/three/objects/EllipsoidRegionHelper.js';
 import {
 	Scene,
 	Group,

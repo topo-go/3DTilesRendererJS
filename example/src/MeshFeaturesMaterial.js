@@ -23,7 +23,7 @@ export const MeshFeaturesMaterialMixin = base => class extends base {
 
 	get nullFeatureId() {
 
-		return this.uniforms.nullFeatureValue.value;
+		return this.uniforms.nullFeatureId.value;
 
 	}
 
@@ -31,12 +31,12 @@ export const MeshFeaturesMaterialMixin = base => class extends base {
 
 		if ( v < 0 || v === null || v === undefined ) {
 
-			this.uniforms.nullFeatureValue.value = null;
+			this.uniforms.nullFeatureId.value = null;
 			this.setDefine( 'USE_NULL_FEATURE', 0 );
 
 		} else {
 
-			this.uniforms.nullFeatureValue.value = v;
+			this.uniforms.nullFeatureId.value = v;
 			this.setDefine( 'USE_NULL_FEATURE', 1 );
 
 		}
@@ -51,7 +51,7 @@ export const MeshFeaturesMaterialMixin = base => class extends base {
 
 	set highlightFeatureId( v ) {
 
-		if ( v < 0 || v === null || v === undefined ) {
+		if ( v === null || v === undefined ) {
 
 			this.uniforms.highlightFeatureId.value = null;
 			this.setDefine( 'USE_HIGHLIGHT_FEATURE', 0 );
@@ -75,7 +75,7 @@ export const MeshFeaturesMaterialMixin = base => class extends base {
 			featureChannelsLength: { value: 0 },
 			featureChannels: { value: new Array( 4 ).fill( 0 ) },
 			featureTexture: { value: null },
-			nullFeatureValue: { value: null },
+			nullFeatureId: { value: null },
 			highlightFeatureId: { value: - 1 },
 
 		};
@@ -198,7 +198,7 @@ export const MeshFeaturesMaterialMixin = base => class extends base {
 
 		if ( info !== null ) {
 
-			this.nullFeatureId = info.nullFeatureId || null;
+			this.nullFeatureId = info.nullFeatureId == null ? null : info.nullFeatureId;
 
 		}
 
@@ -335,7 +335,7 @@ export const MeshFeaturesMaterialMixin = base => class extends base {
 
 					#if USE_NULL_FEATURE
 
-						uniform uint nullFeatureValue;
+						uniform uint nullFeatureId;
 
 					#endif
 
@@ -376,13 +376,8 @@ export const MeshFeaturesMaterialMixin = base => class extends base {
 
 					vec3 randFeatureColor( uint feature ) {
 
-						uint b0 = feature & 0xffffu;
-						uint b1 = ( feature >> 16 ) & 0xffffu;
-						float h = 0.5 * float( b0 ) / float( 0xffffu ) + 0.5 * float( b1 ) / float( 0xffffu );
-						h *= 100.0;
-
 						vec3 hsl;
-						hsl.r = rand( h );
+						hsl.r = rand( float( feature ) / 5500.0 );
 						hsl.g = 0.75;
 						hsl.b = 0.5;
 						return hsl2rgb( hsl );
@@ -425,27 +420,28 @@ export const MeshFeaturesMaterialMixin = base => class extends base {
 
 						#endif
 
-						#if USE_NULL_FEATURE
-
-							if ( nullFeatureId == featureId ) {
-
-								diffuseColor.rgb *= vec3( 0.15 );
-
-							}
-
-						#endif
-
 						#if USE_HIGHLIGHT_FEATURE
 
 							if ( highlightFeatureId != featureId ) {
 
-								diffuseColor.rgb *= 0.35;
+								diffuseColor.rgb *= 0.25;
 
 							}
 
 						#else
 
-							diffuseColor.rgb *= randFeatureColor( featureId );
+							vec3 featureColor = randFeatureColor( featureId );
+							diffuseColor.rgb = mix( diffuseColor.rgb * featureColor, featureColor, 0.05 );
+
+						#endif
+
+						#if USE_NULL_FEATURE
+
+							if ( nullFeatureId == featureId ) {
+
+								diffuseColor.rgb *= vec3( 0.0 );
+
+							}
 
 						#endif
 

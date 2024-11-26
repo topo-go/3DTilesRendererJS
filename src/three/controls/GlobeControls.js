@@ -4,41 +4,42 @@ import {
 	Vector2,
 	Vector3,
 	MathUtils,
+	Ray,
 } from 'three';
-import { EnvironmentControls, NONE } from './EnvironmentControls.js';
-import { makeRotateAroundPoint } from './utils.js';
+import { DRAG, EnvironmentControls, NONE } from './EnvironmentControls.js';
+import { closestRayEllipsoidSurfacePointEstimate, closestRaySpherePointFromRotation, makeRotateAroundPoint, mouseToCoords, setRaycasterFromCamera } from './utils.js';
+import { Ellipsoid } from '../math/Ellipsoid.js';
 
 const _invMatrix = new Matrix4();
 const _rotMatrix = new Matrix4();
 const _pos = new Vector3();
 const _vec = new Vector3();
 const _center = new Vector3();
-const _up = new Vector3();
 const _forward = new Vector3();
 const _right = new Vector3();
 const _targetRight = new Vector3();
 const _globalUp = new Vector3();
 const _quaternion = new Quaternion();
+const _zoomPointUp = new Vector3();
+const _toCenter = new Vector3();
 const _latLon = {};
+const _ray = new Ray();
+const _ellipsoid = new Ellipsoid();
 
 const _pointer = new Vector2();
-const _prevPointer = new Vector2();
-const _deltaPointer = new Vector2();
+const MIN_ELEVATION = 400;
 
-const MIN_ELEVATION = 10;
-const MAX_GLOBE_DISTANCE = 2 * 1e7;
-const GLOBE_TRANSITION_THRESHOLD = 0.75 * 1e7;
 export class GlobeControls extends EnvironmentControls {
 
 	get ellipsoid() {
 
-		return this._tilesRenderer ? this._tilesRenderer.ellipsoid : null;
+		return this.tilesRenderer ? this.tilesRenderer.ellipsoid : null;
 
 	}
 
 	get tilesGroup() {
 
-		return this._tilesRenderer ? this._tilesRenderer.group : null;
+		return this.tilesRenderer ? this.tilesRenderer.group : null;
 
 	}
 
@@ -46,37 +47,63 @@ export class GlobeControls extends EnvironmentControls {
 
 		// store which mode the drag stats are in
 		super( scene, camera, domElement );
-		this._tilesRenderer = null;
+
+		this.isGlobeControls = true;
+
 		this._dragMode = 0;
 		this._rotationMode = 0;
+		this.maxZoom = 0.01;
 		this.useFallbackPlane = false;
+		this.reorientOnDrag = false;
+
+		this.dragQuaternion = new Quaternion();
 
 		this.setTilesRenderer( tilesRenderer );
 
 	}
 
-	setTilesRenderer( tilesRenderer ) {
-
-		this._tilesRenderer = tilesRenderer;
-		if ( this.scene === null && this._tilesRenderer !== null ) {
-
-			this.setScene( this._tilesRenderer.group );
-
-		}
-
-	}
-
 	setScene( scene ) {
 
-		if ( scene === null && this._tilesRenderer !== null ) {
+		if ( scene === null && this.tilesRenderer !== null ) {
 
-			super.setScene( this._tilesRenderer.group );
+			super.setScene( this.tilesRenderer.group );
 
 		} else {
 
 			super.setScene( scene );
 
 		}
+
+	}
+
+	getPivotPoint( target ) {
+
+		const { camera, tilesGroup, ellipsoid } = this;
+
+		// get camera values
+		_forward.set( 0, 0, - 1 ).transformDirection( camera.matrixWorld );
+		_invMatrix.copy( tilesGroup.matrixWorld ).invert();
+
+		// set a ray in the local ellipsoid frame
+		_ray.origin.copy( camera.position );
+		_ray.direction.copy( _forward );
+		_ray.applyMatrix4( _invMatrix );
+
+		// get the estimated closest point
+		closestRayEllipsoidSurfacePointEstimate( _ray, ellipsoid, _vec );
+		_vec.applyMatrix4( tilesGroup.matrixWorld );
+
+		// use the closest point if no pivot was provided or it's closer
+		if (
+			super.getPivotPoint( target ) === null ||
+			target.distanceTo( _ray.origin ) > _vec.distanceTo( _ray.origin )
+		) {
+
+			target.copy( _vec );
+
+		}
+
+		return target;
 
 	}
 
@@ -103,49 +130,50 @@ export class GlobeControls extends EnvironmentControls {
 
 		// get the "up" direction based on the wgs84 ellipsoid
 		const { tilesGroup, ellipsoid } = this;
-		const invMatrix = _invMatrix.copy( tilesGroup.matrixWorld ).invert();
-		const pos = _vec.copy( point ).applyMatrix4( invMatrix );
+		_invMatrix.copy( tilesGroup.matrixWorld ).invert();
+		_vec.copy( point ).applyMatrix4( _invMatrix );
 
-		ellipsoid.getPositionToNormal( pos, target );
+		ellipsoid.getPositionToNormal( _vec, target );
 		target.transformDirection( tilesGroup.matrixWorld );
 
 	}
 
-	update() {
+	getCameraUpDirection( target ) {
 
-		if ( ! this.enabled || ! this.tilesGroup || ! this.camera ) {
+		const { tilesGroup, ellipsoid, camera } = this;
+		if ( camera.isOrthographicCamera ) {
+
+			this._getVirtualOrthoCameraPosition( _vec );
+
+			_invMatrix.copy( tilesGroup.matrixWorld ).invert();
+			_vec.applyMatrix4( _invMatrix );
+
+			ellipsoid.getPositionToNormal( _vec, target );
+			target.transformDirection( tilesGroup.matrixWorld );
+
+		} else {
+
+			this.getUpDirection( camera.position, target );
+
+		}
+
+	}
+
+	update( deltaTime = Math.min( this.clock.getDelta(), 64 / 1000 ) ) {
+
+		if ( ! this.enabled || ! this.tilesGroup || ! this.camera || deltaTime === 0 ) {
 
 			return;
 
 		}
 
-		super.update();
-
-		const {
-			camera,
-			tilesGroup,
-			pivotMesh,
-			ellipsoid,
-		} = this;
-
-		// clamp the camera distance
-		let distanceToCenter = this.getDistanceToCenter();
-		if ( distanceToCenter > MAX_GLOBE_DISTANCE ) {
-
-			_vec.setFromMatrixPosition( tilesGroup.matrixWorld ).sub( camera.position ).normalize().multiplyScalar( - 1 );
-			camera.position.setFromMatrixPosition( tilesGroup.matrixWorld ).addScaledVector( _vec, MAX_GLOBE_DISTANCE );
-			camera.updateMatrixWorld();
-
-			distanceToCenter = MAX_GLOBE_DISTANCE;
-
-		}
+		const { camera, pivotMesh } = this;
 
 		// if we're outside the transition threshold then we toggle some reorientation behavior
-		// when adjusting the up frame while moving hte camera
+		// when adjusting the up frame while moving the camera
 		if ( this._isNearControls() ) {
 
-			this.reorientOnDrag = true;
-			this.reorientOnZoom = false;
+			this.scaleZoomOrientationAtEdges = this.zoomDelta < 0;
 
 		} else {
 
@@ -154,32 +182,76 @@ export class GlobeControls extends EnvironmentControls {
 				pivotMesh.visible = false;
 
 			}
-			this.reorientOnDrag = false;
-			this.reorientOnZoom = true;
+			this.scaleZoomOrientationAtEdges = false;
 
 		}
 
-		// update the projection matrix
-		// interpolate from the 25% radius margin around the globe down to the surface
-		// so we can avoid z fighting when near value is too far at a high altitude
-		const largestDistance = Math.max( ...ellipsoid.radius );
-		const margin = 0.25 * largestDistance;
-		const alpha = MathUtils.clamp( ( distanceToCenter - largestDistance ) / margin, 0, 1 );
-		const minNear = MathUtils.lerp( 1, 1000, alpha );
-		camera.near = Math.max( minNear, distanceToCenter - largestDistance - margin );
+		// fire basic controls update
+		super.update( deltaTime );
 
-		// update the far plane to the horizon distance
-		const invMatrix = _invMatrix.copy( tilesGroup.matrixWorld ).invert();
-		_pos.copy( camera.position ).applyMatrix4( invMatrix );
-		ellipsoid.getPositionToCartographic( _pos, _latLon );
+		// update the camera planes and the ortho camera position
+		this.adjustCamera( camera );
 
-		// use a minimum elevation for computing the horizon distance to avoid the far clip
-		// plane approaching zero as the camera goes to or below sea level.
-		const elevation = Math.max( ellipsoid.getPositionElevation( _pos ), MIN_ELEVATION );
-		const horizonDistance = ellipsoid.calculateHorizonDistance( _latLon.lat, elevation );
-		camera.far = horizonDistance + 0.1;
+	}
 
-		camera.updateProjectionMatrix();
+	// Updates the passed camera near and far clip planes to encapsulate the ellipsoid from the
+	// current position in addition to adjusting the height.
+	adjustCamera( camera ) {
+
+		super.adjustCamera( camera );
+
+		const { tilesGroup, ellipsoid } = this;
+		if ( camera.isPerspectiveCamera ) {
+
+			// adjust the clip planes
+			const distanceToCenter = _vec
+				.setFromMatrixPosition( tilesGroup.matrixWorld )
+				.sub( camera.position ).length();
+
+			// update the projection matrix
+			// interpolate from the 25% radius margin around the globe down to the surface
+			// so we can avoid z fighting when near value is too far at a high altitude
+			const largestDistance = Math.max( ...ellipsoid.radius );
+			const margin = 0.25 * largestDistance;
+			const alpha = MathUtils.clamp( ( distanceToCenter - largestDistance ) / margin, 0, 1 );
+			const minNear = MathUtils.lerp( 1, 1000, alpha );
+			camera.near = Math.max( minNear, distanceToCenter - largestDistance - margin );
+
+			// update the far plane to the horizon distance
+			const invMatrix = _invMatrix.copy( tilesGroup.matrixWorld ).invert();
+			_pos.copy( camera.position ).applyMatrix4( invMatrix );
+			ellipsoid.getPositionToCartographic( _pos, _latLon );
+
+			// use a minimum elevation for computing the horizon distance to avoid the far clip
+			// plane approaching zero as the camera goes to or below sea level.
+			const elevation = Math.max( ellipsoid.getPositionElevation( _pos ), MIN_ELEVATION );
+			const horizonDistance = ellipsoid.calculateHorizonDistance( _latLon.lat, elevation );
+
+			// extend the horizon distance by 2.5 to handle cases where geometry extends above the horizon
+			camera.far = horizonDistance * 2.5 + 0.1;
+			camera.updateProjectionMatrix();
+
+		} else {
+
+			this._getVirtualOrthoCameraPosition( camera.position, camera );
+			camera.updateMatrixWorld();
+
+			_invMatrix.copy( camera.matrixWorld ).invert();
+			_vec.setFromMatrixPosition( tilesGroup.matrixWorld ).applyMatrix4( _invMatrix );
+
+			const distanceToCenter = - _vec.z;
+			camera.near = distanceToCenter - Math.max( ...ellipsoid.radius ) * 1.1;
+			camera.far = distanceToCenter + 0.1;
+
+			// adjust the position of the ortho camera such that the near value is 0
+			camera.position.addScaledVector( _forward, camera.near );
+			camera.far -= camera.near;
+			camera.near = 0;
+
+			camera.updateProjectionMatrix();
+			camera.updateMatrixWorld();
+
+		}
 
 	}
 
@@ -192,57 +264,123 @@ export class GlobeControls extends EnvironmentControls {
 
 	}
 
-	_updatePosition( ...args ) {
+	_updatePosition( deltaTime ) {
 
-		if ( this._dragMode === 1 || this._isNearControls() ) {
+		if ( this.state !== DRAG ) {
 
-			this._dragMode = 1;
+			const {
+				enableDamping,
+				tilesGroup,
+				dragQuaternion,
+				dragInertia,
+				camera,
+			} = this;
 
-			super._updatePosition( ...args );
+			// apply inertia for movement
+			if ( enableDamping ) {
+
+				// ensure our w component is non-one if the xyz values are
+				// non zero to ensure we can animate
+				if (
+					dragQuaternion.w === 1 && (
+						dragQuaternion.x !== 0 ||
+						dragQuaternion.y !== 0 ||
+						dragQuaternion.z !== 0
+					)
+				) {
+
+					dragQuaternion.w = Math.min( dragQuaternion.w, 1 - 1e-9 );
+
+				}
+
+				// construct the rotation matrix
+				_center.setFromMatrixPosition( tilesGroup.matrixWorld );
+				_quaternion.identity().slerp( dragQuaternion, dragInertia.x * deltaTime );
+				makeRotateAroundPoint( _center, _quaternion, _rotMatrix );
+
+				// apply the rotation
+				camera.matrixWorld.premultiply( _rotMatrix );
+				camera.matrixWorld.decompose( camera.position, camera.quaternion, _vec );
+
+			}
 
 		} else {
 
-			this._dragMode = - 1;
+			// save the drag mode state so we can update the pivot mesh visuals in "update"
+			if ( this._dragMode === 0 ) {
+
+				this._dragMode = this._isNearControls() ? 1 : - 1;
+
+			}
 
 			const {
-				pointerTracker,
-				rotationSpeed,
+				raycaster,
 				camera,
-				pivotMesh,
 				pivotPoint,
+				pointerTracker,
+				domElement,
 				tilesGroup,
 			} = this;
 
-			// get the delta movement with magic numbers scaled by the distance to the
-			// grabbed point so it feels okay
-			// TODO: it would be better to properly calculate angle based on drag distance
+			// reuse cache variables
+			const pivotDir = _pos;
+			const newPivotDir = _targetRight;
+
+			// get the pointer and ray
 			pointerTracker.getCenterPoint( _pointer );
-			pointerTracker.getPreviousCenterPoint( _prevPointer );
-			_deltaPointer
-				.subVectors( _pointer, _prevPointer )
-				.multiplyScalar( camera.position.distanceTo( pivotPoint ) * 5 * 1e-10 / devicePixelRatio );
+			mouseToCoords( _pointer.x, _pointer.y, domElement, _pointer );
+			setRaycasterFromCamera( raycaster, _pointer, camera );
 
-			const azimuth = - _deltaPointer.x * rotationSpeed;
-			const altitude = - _deltaPointer.y * rotationSpeed;
+			// transform to ellipsoid frame
+			_invMatrix.copy( tilesGroup.matrixWorld ).invert();
+			raycaster.ray.applyMatrix4( _invMatrix );
 
+			// construct an ellipsoid that matches a sphere with the radius of the globe so
+			// the drag position matches where the initial click was
+			const pivotRadius = _vec.copy( pivotPoint ).applyMatrix4( _invMatrix ).length();
+			_ellipsoid.radius.setScalar( pivotRadius );
+
+			// find the hit point and use the closest point on the horizon if we miss
+			if ( camera.isPerspectiveCamera ) {
+
+				if ( ! _ellipsoid.intersectRay( raycaster.ray, _vec ) ) {
+
+					closestRaySpherePointFromRotation( raycaster.ray, pivotRadius, _vec );
+
+				}
+
+			} else {
+
+				closestRayEllipsoidSurfacePointEstimate( raycaster.ray, _ellipsoid, _vec );
+
+			}
+			_vec.applyMatrix4( tilesGroup.matrixWorld );
+
+			// get the point directions
 			_center.setFromMatrixPosition( tilesGroup.matrixWorld );
-			_right.set( 1, 0, 0 ).transformDirection( camera.matrixWorld );
-			_up.set( 0, 1, 0 ).transformDirection( camera.matrixWorld );
+			pivotDir.subVectors( pivotPoint, _center ).normalize();
+			newPivotDir.subVectors( _vec, _center ).normalize();
 
-			// apply the altitude and azimuth adjustment
-			_quaternion.setFromAxisAngle( _right, altitude );
-			camera.quaternion.premultiply( _quaternion );
+			// construct the rotation
+			_quaternion.setFromUnitVectors( newPivotDir, pivotDir );
 			makeRotateAroundPoint( _center, _quaternion, _rotMatrix );
-			camera.matrixWorld.premultiply( _rotMatrix );
 
-			_quaternion.setFromAxisAngle( _up, azimuth );
-			camera.quaternion.premultiply( _quaternion );
-			makeRotateAroundPoint( _center, _quaternion, _rotMatrix );
+			// apply the rotation
 			camera.matrixWorld.premultiply( _rotMatrix );
-
 			camera.matrixWorld.decompose( camera.position, camera.quaternion, _vec );
 
-			pivotMesh.visible = false;
+			const { dragInertia, dragQuaternion } = this;
+			if ( pointerTracker.getMoveDistance() / deltaTime < 2 * window.devicePixelRatio ) {
+
+				dragQuaternion.slerp( _quaternion, 0.5 );
+				dragInertia.set( 1 / deltaTime, 0, 0 );
+
+			} else {
+
+				dragQuaternion.copy( _quaternion );
+				dragInertia.set( 1 / deltaTime, 0, 0 );
+
+			}
 
 		}
 
@@ -271,30 +409,91 @@ export class GlobeControls extends EnvironmentControls {
 
 	_updateZoom() {
 
-		const scale = this.zoomDelta;
-		if ( this._isNearControls() || scale > 0 ) {
+		const { zoomDelta, ellipsoid, zoomSpeed, zoomPoint, camera, maxZoom } = this;
+
+		// used to scale the tilt transitions based on zoom intensity
+		const deltaAlpha = MathUtils.clamp( MathUtils.mapLinear( Math.abs( zoomDelta ), 0, 20, 0, 1 ), 0, 1 );
+		if ( this._isNearControls() || zoomDelta > 0 ) {
+
+			this._updateZoomDirection();
+
+			// When zooming try to tilt the camera towards the center of the planet to avoid the globe
+			// spinning as you zoom out from the horizon
+			if ( zoomDelta < 0 && ( this.zoomPointSet || this._updateZoomPoint() ) ) {
+
+				// get the forward vector and vector toward the center of the ellipsoid
+				_forward.set( 0, 0, - 1 ).transformDirection( camera.matrixWorld ).normalize();
+				_toCenter.copy( this.up ).multiplyScalar( - 1 );
+
+				// Calculate alpha values to use to scale the amount of tilt that occurs as the camera moves.
+				// Scales based on mouse position near the horizon and current tilt.
+				this.getUpDirection( zoomPoint, _zoomPointUp );
+				const upAlpha = MathUtils.clamp( MathUtils.mapLinear( - _zoomPointUp.dot( _toCenter ), 1, 0.95, 0, 1 ), 0, 1 );
+				const forwardAlpha = 1 - _forward.dot( _toCenter );
+				const cameraAlpha = camera.isOrthographicCamera ? 0.05 : 1;
+				const adjustedDeltaAlpha = MathUtils.clamp( deltaAlpha * 3, 0, 1 );
+
+				// apply scale
+				const alpha = Math.min( upAlpha * forwardAlpha * cameraAlpha * adjustedDeltaAlpha, 0.1 );
+				_toCenter.lerpVectors( _forward, _toCenter, alpha ).normalize();
+
+				// perform rotation
+				_quaternion.setFromUnitVectors( _forward, _toCenter );
+				makeRotateAroundPoint( zoomPoint, _quaternion, _rotMatrix );
+				camera.matrixWorld.premultiply( _rotMatrix );
+				camera.matrixWorld.decompose( camera.position, camera.quaternion, _toCenter );
+
+				// update zoom direction
+				this.zoomDirection.subVectors( zoomPoint, camera.position ).normalize();
+
+			}
 
 			super._updateZoom();
 
-		} else {
+		} else if ( camera.isPerspectiveCamera ) {
 
 			// orient the camera to focus on the earth during the zoom
-			const alpha = MathUtils.mapLinear( this.getDistanceToCenter(), GLOBE_TRANSITION_THRESHOLD, MAX_GLOBE_DISTANCE, 0, 1 );
-			this._tiltTowardsCenter( MathUtils.lerp( 0, 0.2, alpha ) );
-			this._alignCameraUpToNorth( MathUtils.lerp( 0, 0.1, alpha ) );
+			const transitionDistance = this._getPerspectiveTransitionDistance();
+			const maxDistance = this._getMaxPerspectiveDistance();
+			const distanceAlpha = MathUtils.mapLinear( this.getDistanceToCenter(), transitionDistance, maxDistance, 0, 1 );
+			this._tiltTowardsCenter( MathUtils.lerp( 0, 0.4, distanceAlpha * deltaAlpha ) );
+			this._alignCameraUpToNorth( MathUtils.lerp( 0, 0.2, distanceAlpha * deltaAlpha ) );
+
+			// calculate zoom in a similar way to environment controls so
+			// the zoom speeds are comparable
+			const dist = this.getDistanceToCenter() - ellipsoid.radius.x;
+			const scale = zoomDelta * dist * zoomSpeed * 0.0025;
+			const clampedScale = Math.max( scale, Math.min( this.getDistanceToCenter() - maxDistance, 0 ) );
 
 			// zoom out directly from the globe center
-			this.getVectorToCenter( _vec );
-			this.camera.position.addScaledVector( _vec, scale * 0.0025 );
+			this.getVectorToCenter( _vec ).normalize();
+			this.camera.position.addScaledVector( _vec, clampedScale );
 			this.camera.updateMatrixWorld();
 
 			this.zoomDelta = 0;
 
-		}
+		} else {
 
-		// TODO: we should consider rotating the camera about the zoom point in this case
-		// Possibly for drag, too?
-		this._alignCameraUp( this.up );
+			const transitionZoom = this._getOrthographicTransitionZoom();
+			const minZoom = this._getMinOrthographicZoom();
+			const distanceAlpha = MathUtils.mapLinear( camera.zoom, transitionZoom, minZoom, 0, 1 );
+			this._tiltTowardsCenter( MathUtils.lerp( 0, 0.4, distanceAlpha * deltaAlpha ) );
+			this._alignCameraUpToNorth( MathUtils.lerp( 0, 0.2, distanceAlpha * deltaAlpha ) );
+
+			const scale = this.zoomDelta;
+			const normalizedDelta = Math.pow( 0.95, Math.abs( scale * 0.05 ) );
+			const scaleFactor = scale > 0 ? 1 / Math.abs( normalizedDelta ) : normalizedDelta;
+
+			const maxScaleFactor = minZoom / camera.zoom;
+			const clampedScaleFactor = Math.max( scaleFactor * zoomSpeed, Math.min( maxScaleFactor, 1 ) );
+
+			camera.zoom = Math.min( maxZoom, camera.zoom * clampedScaleFactor );
+			camera.updateProjectionMatrix();
+
+			this.zoomDelta = 0;
+			this.zoomDirectionSet = false;
+
+		}
 
 	}
 
@@ -351,33 +550,134 @@ export class GlobeControls extends EnvironmentControls {
 
 	}
 
+	// returns the perspective camera transition distance can move to based on globe size and fov
+	_getPerspectiveTransitionDistance() {
+
+		const { camera, ellipsoid } = this;
+		if ( ! camera.isPerspectiveCamera ) {
+
+			throw new Error();
+
+		}
+
+		// When the smallest fov spans 65% of the ellipsoid then we use the near controls
+		const ellipsoidRadius = Math.max( ...ellipsoid.radius );
+		const fovHoriz = 2 * Math.atan( Math.tan( MathUtils.DEG2RAD * camera.fov * 0.5 ) * camera.aspect );
+		const distVert = ellipsoidRadius / Math.tan( MathUtils.DEG2RAD * camera.fov * 0.5 );
+		const distHoriz = ellipsoidRadius / Math.tan( fovHoriz * 0.5 );
+		const dist = Math.max( distVert, distHoriz );
+
+		return dist;
+
+	}
+
+	// returns the max distance the perspective camera can move to based on globe size and fov
+	_getMaxPerspectiveDistance() {
+
+		const { camera, ellipsoid } = this;
+		if ( ! camera.isPerspectiveCamera ) {
+
+			throw new Error();
+
+		}
+
+		// allow for zooming out such that the ellipsoid is half the size of the largest fov
+		const ellipsoidRadius = Math.max( ...ellipsoid.radius );
+		const fovHoriz = 2 * Math.atan( Math.tan( MathUtils.DEG2RAD * camera.fov * 0.5 ) * camera.aspect );
+		const distVert = ellipsoidRadius / Math.tan( MathUtils.DEG2RAD * camera.fov * 0.5 );
+		const distHoriz = ellipsoidRadius / Math.tan( fovHoriz * 0.5 );
+		const dist = 2 * Math.max( distVert, distHoriz );
+
+		return dist;
+
+	}
+
+	// returns the transition threshold for orthographic zoom based on the globe size and camera settings
+	_getOrthographicTransitionZoom() {
+
+		const { camera, ellipsoid } = this;
+		if ( ! camera.isOrthographicCamera ) {
+
+			throw new Error();
+
+		}
+
+		const orthoHeight = ( camera.top - camera.bottom );
+		const orthoWidth = ( camera.right - camera.left );
+		const orthoSize = Math.max( orthoHeight, orthoWidth );
+		const ellipsoidRadius = Math.max( ...ellipsoid.radius );
+		const ellipsoidDiameter = 2 * ellipsoidRadius;
+		return 2 * orthoSize / ellipsoidDiameter;
+
+	}
+
+	// returns the minimum allowed orthographic zoom based on the globe size and camera settings
+	_getMinOrthographicZoom() {
+
+		const { camera, ellipsoid } = this;
+		if ( ! camera.isOrthographicCamera ) {
+
+			throw new Error();
+
+		}
+
+		const orthoHeight = ( camera.top - camera.bottom );
+		const orthoWidth = ( camera.right - camera.left );
+		const orthoSize = Math.min( orthoHeight, orthoWidth );
+		const ellipsoidRadius = Math.max( ...ellipsoid.radius );
+		const ellipsoidDiameter = 2 * ellipsoidRadius;
+		return 0.7 * orthoSize / ellipsoidDiameter;
+
+	}
+
+	// returns the "virtual position" of the orthographic based on where it is and
+	// where it's looking primarily so we can reasonably position the camera object
+	// in space and derive a reasonable "up" value.
+	_getVirtualOrthoCameraPosition( target, camera = this.camera ) {
+
+		const { tilesGroup, ellipsoid } = this;
+		if ( ! camera.isOrthographicCamera ) {
+
+			throw new Error();
+
+		}
+
+		_invMatrix.copy( tilesGroup.matrixWorld ).invert();
+
+		// get ray in globe coordinate frame
+		_ray.origin.copy( camera.position );
+		_ray.direction.set( 0, 0, - 1 ).transformDirection( camera.matrixWorld );
+		_ray.applyMatrix4( _invMatrix );
+
+		// get the closest point to the ray on the globe in the global coordinate frame
+		closestRayEllipsoidSurfacePointEstimate( _ray, ellipsoid, _pos );
+		_pos.applyMatrix4( tilesGroup.matrixWorld );
+
+		// get ortho camera info
+		const orthoHeight = ( camera.top - camera.bottom );
+		const orthoWidth = ( camera.right - camera.left );
+		const orthoSize = Math.max( orthoHeight, orthoWidth ) / camera.zoom;
+		_forward.set( 0, 0, - 1 ).transformDirection( camera.matrixWorld );
+
+		// ensure we move the camera exactly along the forward vector to avoid shifting
+		// the camera in other directions due to floating point error
+		const dist = _pos.sub( camera.position ).dot( _forward );
+		target.copy( camera.position ).addScaledVector( _forward, dist - orthoSize * 4 );
+
+	}
+
 	_isNearControls() {
 
-		return this.getDistanceToCenter() < GLOBE_TRANSITION_THRESHOLD;
+		const { camera } = this;
+		if ( camera.isPerspectiveCamera ) {
 
-		// const camera = this.camera;
+			return this.getDistanceToCenter() < this._getPerspectiveTransitionDistance();
 
-		// if ( camera.isPerspectiveCamera ) {
+		} else {
 
-		// 	// TODO:
-		// 	// - must recalculate the max zoom out distance based on camera fov
-		// 	// - must adjust use of GLOBE_TRANSITION_THRESHOLD above
+			return camera.zoom > this._getOrthographicTransitionZoom();
 
-		// 	// https://physicsforums.com/threads/need-an-equation-for-converting-vertical-to-horizontal-fov.981179/
-		// 	const fovHoriz = 2 * Math.atan( Math.tan( MathUtils.DEG2RAD * camera.fov * 0.5 ) * camera.aspect );
-
-		// 	const size = Math.max( ...this.ellipsoid.radius );
-		// 	const distVert = size / Math.tan( MathUtils.DEG2RAD * camera.fov * 0.5 );
-		// 	const distHoriz = size / Math.tan( fovHoriz * 0.5 );
-		// 	const dist = Math.max( distVert, distHoriz );
-
-		// 	return this.getDistanceToCenter() < dist * 0.7;
-
-		// } else {
-
-		//	return this.getDistanceToCenter() < GLOBE_TRANSITION_THRESHOLD;
-
-		// }
+		}
 
 	}
 

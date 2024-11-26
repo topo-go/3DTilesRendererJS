@@ -14,11 +14,11 @@ function isUsedThisFrame( tile, frameCount ) {
 }
 
 // Resets the frame frame information for the given tile
-function resetFrameState( tile, frameCount ) {
+function resetFrameState( tile, renderer ) {
 
-	if ( tile.__lastFrameVisited !== frameCount ) {
+	if ( tile.__lastFrameVisited !== renderer.frameCount ) {
 
-		tile.__lastFrameVisited = frameCount;
+		tile.__lastFrameVisited = renderer.frameCount;
 		tile.__used = false;
 		tile.__inFrustum = false;
 		tile.__isLeaf = false;
@@ -29,25 +29,28 @@ function resetFrameState( tile, frameCount ) {
 		tile.__childrenWereVisible = false;
 		tile.__allChildrenLoaded = false;
 
+		// update tile frustum and error state
+		tile.__inFrustum = renderer.tileInView( tile );
+		renderer.calculateError( tile );
+
 	}
 
 }
 
 // Recursively mark tiles used down to the next tile with content
-function recursivelyMarkUsed( tile, frameCount, lruCache, renderer ) {
+function recursivelyMarkUsed( tile, renderer ) {
 
 	renderer.ensureChildrenArePreprocessed( tile );
 
-	resetFrameState( tile, frameCount );
+	resetFrameState( tile, renderer );
+	markUsed( tile, renderer );
 
-	tile.__used = true;
-	lruCache.markUsed( tile );
-	if ( tile.__contentEmpty ) {
+	if ( ! tile.__hasRenderableContent ) {
 
 		const children = tile.children;
 		for ( let i = 0, l = children.length; i < l; i ++ ) {
 
-			recursivelyMarkUsed( children[ i ], frameCount, lruCache, renderer );
+			recursivelyMarkUsed( children[ i ], renderer );
 
 		}
 
@@ -55,16 +58,19 @@ function recursivelyMarkUsed( tile, frameCount, lruCache, renderer ) {
 
 }
 
-function recursivelyLoadTiles( tile, depthFromRenderedParent, renderer ) {
+// Recursively traverses to the next tiles with unloaded renderable content to load them
+function recursivelyLoadNextRenderableTiles( tile, renderer ) {
 
 	renderer.ensureChildrenArePreprocessed( tile );
 
 	// Try to load any external tile set children if the external tile set has loaded.
 	const doTraverse =
-		tile.__contentEmpty && (
-			! tile.__externalTileSet ||
+		isUsedThisFrame( tile, renderer.frameCount ) &&
+		! tile.__hasRenderableContent && (
+			! tile.__hasContent ||
 			isDownloadFinished( tile.__loadingState )
 		);
+
 	if ( doTraverse ) {
 
 		const children = tile.children;
@@ -74,16 +80,57 @@ function recursivelyLoadTiles( tile, depthFromRenderedParent, renderer ) {
 			// the next layer of rendered children as just a single depth away for the
 			// sake of sorting.
 			const child = children[ i ];
-			child.__depthFromRenderedParent = depthFromRenderedParent;
-			recursivelyLoadTiles( child, depthFromRenderedParent, renderer );
+			recursivelyLoadNextRenderableTiles( child, renderer );
 
 		}
 
-	} else {
+	} else if ( isUsedThisFrame( tile, renderer.frameCount ) && ! renderer.lruCache.isFull() ) {
 
-		renderer.requestTileContents( tile );
+		renderer.queueTileForDownload( tile );
 
 	}
+
+}
+
+// Mark a tile as being used by current view
+function markUsed( tile, renderer ) {
+
+	if ( tile.__used ) {
+
+		return;
+
+	}
+
+	tile.__used = true;
+	renderer.lruCache.markUsed( tile );
+	renderer.stats.used ++;
+
+	if ( tile.__inFrustum === true ) {
+
+		renderer.stats.inFrustum ++;
+
+	}
+
+}
+
+// Returns whether the tile can be traversed to the next layer of children by checking the tile metrics
+function canTraverse( tile, renderer ) {
+
+	// If we've met the error requirements then don't load further
+	if ( tile.__error <= renderer.errorTarget ) {
+
+		return false;
+
+	}
+
+	// Early out if we've reached the maximum allowed depth.
+	if ( renderer.maxDepth > 0 && tile.__depth + 1 >= renderer.maxDepth ) {
+
+		return false;
+
+	}
+
+	return true;
 
 }
 
@@ -118,101 +165,84 @@ export function traverseSet( tile, beforeCb = null, afterCb = null, parent = nul
 
 }
 
-// Determine which tiles are within the camera frustum.
-// TODO: this is marking items as used in the lrucache, which means some data is
-// being kept around that isn't being used -- is that okay?
-export function determineFrustumSet( tile, renderer ) {
+// Determine which tiles are used by the renderer given the current camera configuration
+export function markUsedTiles( tile, renderer ) {
 
 	// determine frustum set is run first so we can ensure the preprocessing of all the necessary
 	// child tiles has happened here.
 	renderer.ensureChildrenArePreprocessed( tile );
 
-	const stats = renderer.stats;
-	const frameCount = renderer.frameCount;
-	const errorTarget = renderer.errorTarget;
-	const maxDepth = renderer.maxDepth;
-	const loadSiblings = renderer.loadSiblings;
-	const lruCache = renderer.lruCache;
-	const stopAtEmptyTiles = renderer.stopAtEmptyTiles;
-	resetFrameState( tile, frameCount );
+	resetFrameState( tile, renderer );
 
-	// Early out if this tile is not within view.
-	const inFrustum = renderer.tileInView( tile );
-	if ( inFrustum === false ) {
+	if ( ! tile.__inFrustum ) {
 
-		return false;
+		return;
 
 	}
 
-	tile.__used = true;
-	lruCache.markUsed( tile );
+	if ( ! canTraverse( tile, renderer ) ) {
 
-	tile.__inFrustum = true;
-	stats.inFrustum ++;
-
-	// Early out if this tile has less error than we're targeting but don't stop
-	// at an external tile set.
-	if ( ( stopAtEmptyTiles || ! tile.__contentEmpty ) && ! tile.__externalTileSet ) {
-
-		// compute the _error and __distanceFromCamera fields
-		renderer.calculateError( tile );
-
-		const error = tile.__error;
-		if ( error <= errorTarget ) {
-
-			return true;
-
-		}
-
-		// Early out if we've reached the maximum allowed depth.
-		if ( renderer.maxDepth > 0 && tile.__depth + 1 >= maxDepth ) {
-
-			return true;
-
-		}
+		markUsed( tile, renderer );
+		return;
 
 	}
 
 	// Traverse children and see if any children are in view.
 	let anyChildrenUsed = false;
+	let anyChildrenInFrustum = false;
 	const children = tile.children;
 	for ( let i = 0, l = children.length; i < l; i ++ ) {
 
 		const c = children[ i ];
-		const r = determineFrustumSet( c, renderer );
-		anyChildrenUsed = anyChildrenUsed || r;
+		markUsedTiles( c, renderer );
+		anyChildrenUsed = anyChildrenUsed || isUsedThisFrame( c, renderer.frameCount );
+		anyChildrenInFrustum = anyChildrenInFrustum || c.__inFrustum;
 
 	}
 
-	// If there are children within view and we are loading siblings then mark
-	// all sibling tiles as used, as well.
-	if ( anyChildrenUsed && loadSiblings ) {
+	// Disabled for now because this will cause otherwise unused children to be added to the lru cache
+	// if none of the children are in the frustum then this tile shouldn't be displayed
+	if ( tile.refine === 'REPLACE' && ! anyChildrenInFrustum && children.length !== 0 && ! tile.__hasUnrenderableContent ) {
+
+		// TODO: we're not checking tiles with unrenderable content here since external tile sets might look like they're in the frustum,
+		// load the children, then the children indicate that it's not visible, causing it to be unloaded. Then it will be loaded again.
+		// The impact when including external tile set roots in the check is more significant but can't be used unless we keep external tile
+		// sets around even when they're not needed. See issue #741.
+
+		// TODO: what if we mark the tile as not in the frustum but we _do_ mark it as used? Then we can stop frustum traversal and at least
+		// prevent tiles from rendering unless they're needed.
+		tile.__inFrustum = false;
+		return;
+
+	}
+
+	// wait until after the above condition to mark the traversed tile as used or not
+	markUsed( tile, renderer );
+
+	// If this is a tile that needs children loaded to refine then recursively load child
+	// tiles until error is met
+	if ( anyChildrenUsed && tile.refine === 'REPLACE' ) {
 
 		for ( let i = 0, l = children.length; i < l; i ++ ) {
 
 			const c = children[ i ];
-			recursivelyMarkUsed( c, frameCount, lruCache, renderer );
+			recursivelyMarkUsed( c, renderer );
 
 		}
 
 	}
-
-	return true;
 
 }
 
 // Traverse and mark the tiles that are at the leaf nodes of the "used" tree.
 export function markUsedSetLeaves( tile, renderer ) {
 
-	const stats = renderer.stats;
 	const frameCount = renderer.frameCount;
 	if ( ! isUsedThisFrame( tile, frameCount ) ) {
 
 		return;
 
 	}
-
-	stats.used ++;
 
 	// This tile is a leaf if none of the children had been used.
 	const children = tile.children;
@@ -224,12 +254,8 @@ export function markUsedSetLeaves( tile, renderer ) {
 
 	}
 
-
 	if ( ! anyChildrenUsed ) {
 
-		// TODO: This isn't necessarily right because it's possible that a parent tile is considered in the
-		// frustum while the child tiles are not, making them unused. If all children have loaded and were properly
-		// considered to be in the used set then we shouldn't set ourselves to a leaf here.
 		tile.__isLeaf = true;
 
 	} else {
@@ -248,12 +274,12 @@ export function markUsedSetLeaves( tile, renderer ) {
 				// - the children's children have been loaded
 				// - the tile content has loaded
 				// - the tile is completely empty - ie has no children and no content
-				// - the child tileset has tried to load but failed
+				// - the child tile set has tried to load but failed
 				const childLoaded =
 					c.__allChildrenLoaded ||
-					( ! c.__contentEmpty && isDownloadFinished( c.__loadingState ) ) ||
-					( ! c.__externalTileSet && c.__contentEmpty && c.children.length === 0 ) ||
-					( c.__externalTileSet && c.__loadingState === FAILED );
+					( c.__hasRenderableContent && isDownloadFinished( c.__loadingState ) ) ||
+					( ! c.__hasContent && c.children.length === 0 ) ||
+					( c.__hasUnrenderableContent && c.__loadingState === FAILED );
 				allChildrenLoaded = allChildrenLoaded && childLoaded;
 
 			}
@@ -267,26 +293,20 @@ export function markUsedSetLeaves( tile, renderer ) {
 
 }
 
+// TODO: revisit implementation
 // Skip past tiles we consider unrenderable because they are outside the error threshold.
-export function skipTraversal( tile, renderer ) {
+export function markVisibleTiles( tile, renderer ) {
 
 	const stats = renderer.stats;
-	const frameCount = renderer.frameCount;
-	if ( ! isUsedThisFrame( tile, frameCount ) ) {
+	if ( ! isUsedThisFrame( tile, renderer.frameCount ) ) {
 
 		return;
 
 	}
 
-	const parent = tile.parent;
-	const parentDepthToParent = parent ? parent.__depthFromRenderedParent : - 1;
-	tile.__depthFromRenderedParent = parentDepthToParent;
-
 	// Request the tile contents or mark it as visible if we've found a leaf.
 	const lruCache = renderer.lruCache;
 	if ( tile.__isLeaf ) {
-
-		tile.__depthFromRenderedParent ++;
 
 		if ( tile.__loadingState === LOADED ) {
 
@@ -299,9 +319,9 @@ export function skipTraversal( tile, renderer ) {
 			tile.__active = true;
 			stats.active ++;
 
-		} else if ( ! lruCache.isFull() && ( ! tile.__contentEmpty || tile.__externalTileSet ) ) {
+		} else if ( ! lruCache.isFull() && tile.__hasContent ) {
 
-			renderer.requestTileContents( tile );
+			renderer.queueTileForDownload( tile );
 
 		}
 
@@ -309,28 +329,24 @@ export function skipTraversal( tile, renderer ) {
 
 	}
 
+	const children = tile.children;
+	const hasContent = tile.__hasContent;
+	const loadedContent = isDownloadFinished( tile.__loadingState ) && hasContent;
 	const errorRequirement = ( renderer.errorTarget + 1 ) * renderer.errorThreshold;
 	const meetsSSE = tile.__error <= errorRequirement;
-	const includeTile = meetsSSE || tile.refine === 'ADD';
-	const hasModel = ! tile.__contentEmpty;
-	const hasContent = hasModel || tile.__externalTileSet;
-	const loadedContent = isDownloadFinished( tile.__loadingState ) && hasContent;
 	const childrenWereVisible = tile.__childrenWereVisible;
-	const children = tile.children;
-	const allChildrenHaveContent = tile.__allChildrenLoaded;
 
-	// Increment the relative depth of the node to the nearest rendered parent if it has content
-	// and is being rendered.
-	if ( includeTile && hasModel ) {
-
-		tile.__depthFromRenderedParent ++;
-
-	}
+	// NOTE: We can "trickle" root tiles in by enabling these lines.
+	// Don't wait for all children tiles to load if this tile set has empty tiles at the root
+	// const emptyRootTile = tile.__depthFromRenderedParent === 0;
+	// const allChildrenLoaded = tile.__allChildrenLoaded || emptyRootTile;
 
 	// If we've met the SSE requirements and we can load content then fire a fetch.
+	const allChildrenLoaded = tile.__allChildrenLoaded;
+	const includeTile = meetsSSE || tile.refine === 'ADD';
 	if ( includeTile && ! loadedContent && ! lruCache.isFull() && hasContent ) {
 
-		renderer.requestTileContents( tile );
+		renderer.queueTileForDownload( tile );
 
 	}
 
@@ -341,7 +357,7 @@ export function skipTraversal( tile, renderer ) {
 
 	// Skip the tile entirely if there's no content to load
 	if (
-		( meetsSSE && ! allChildrenHaveContent && ! childrenWereVisible && loadedContent )
+		( meetsSSE && ! allChildrenLoaded && ! childrenWereVisible && loadedContent )
 			|| ( tile.refine === 'ADD' && loadedContent )
 	) {
 
@@ -358,17 +374,16 @@ export function skipTraversal( tile, renderer ) {
 
 	// If we're additive then don't stop the traversal here because it doesn't matter whether the children load in
 	// at the same rate.
-	if ( tile.refine !== 'ADD' && meetsSSE && ! allChildrenHaveContent && loadedContent ) {
+	if ( tile.refine === 'REPLACE' && meetsSSE && ! allChildrenLoaded ) {
 
 		// load the child content if we've found that we've been loaded so we can move down to the next tile
 		// layer when the data has loaded.
 		for ( let i = 0, l = children.length; i < l; i ++ ) {
 
 			const c = children[ i ];
-			if ( isUsedThisFrame( c, frameCount ) && ! lruCache.isFull() ) {
+			if ( isUsedThisFrame( c, renderer.frameCount ) ) {
 
-				c.__depthFromRenderedParent = tile.__depthFromRenderedParent + 1;
-				recursivelyLoadTiles( c, c.__depthFromRenderedParent, renderer );
+				recursivelyLoadNextRenderableTiles( c, renderer );
 
 			}
 
@@ -378,12 +393,7 @@ export function skipTraversal( tile, renderer ) {
 
 		for ( let i = 0, l = children.length; i < l; i ++ ) {
 
-			const c = children[ i ];
-			if ( isUsedThisFrame( c, frameCount ) ) {
-
-				skipTraversal( c, renderer );
-
-			}
+			markVisibleTiles( children[ i ], renderer );
 
 		}
 
@@ -394,8 +404,7 @@ export function skipTraversal( tile, renderer ) {
 // Final traverse to toggle tile visibility.
 export function toggleTiles( tile, renderer ) {
 
-	const frameCount = renderer.frameCount;
-	const isUsed = isUsedThisFrame( tile, frameCount );
+	const isUsed = isUsedThisFrame( tile, renderer.frameCount );
 	if ( isUsed || tile.__usedLastFrame ) {
 
 		let setActive = false;
@@ -414,10 +423,17 @@ export function toggleTiles( tile, renderer ) {
 
 			}
 
+		} else {
+
+			// if the tile was used last frame but not this one then there's potential for the tile
+			// to not have been visited during the traversal, meaning it hasn't been reset and has
+			// stale values. This ensures the values are not stale.
+			resetFrameState( tile, renderer );
+
 		}
 
 		// If the active or visible state changed then call the functions.
-		if ( ! tile.__contentEmpty && tile.__loadingState === LOADED ) {
+		if ( tile.__hasRenderableContent && tile.__loadingState === LOADED ) {
 
 			if ( tile.__wasSetActive !== setActive ) {
 

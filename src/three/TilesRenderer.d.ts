@@ -1,11 +1,12 @@
 import { Box3, Camera, Vector2, Matrix4, WebGLRenderer, Object3D, LoadingManager, Sphere } from 'three';
 import { Tile } from '../base/Tile';
-import { Tileset } from '../base/Tileset';
 import { TilesRendererBase } from '../base/TilesRendererBase';
 import { TilesGroup } from './TilesGroup';
+import { Ellipsoid } from './math/Ellipsoid';
 
 export class TilesRenderer extends TilesRendererBase {
 
+	ellipsoid: Ellipsoid;
 	autoDisableRendererCulling : Boolean;
 	optimizeRaycast : Boolean;
 
@@ -26,11 +27,6 @@ export class TilesRenderer extends TilesRendererBase {
 	setResolutionFromRenderer( camera : Camera, renderer : WebGLRenderer ) : Boolean;
 
 	forEachLoadedModel( callback : ( scene : Object3D, tile : Tile ) => void ) : void;
-
-	onLoadTileSet : ( ( tileSet : Tileset ) => void ) | null;
-	onLoadModel : ( ( scene : Object3D, tile : Tile ) => void ) | null;
-	onDisposeModel : ( ( scene : Object3D, tile : Tile ) => void ) | null;
-	onTileVisibilityChange : ( ( scene : Object3D, tile : Tile, visible : boolean ) => void ) | null;
 
 	addEventListener( type: String, cb: ( e : Object ) => void );
 	hasEventListener( type: String, cb: ( e : Object ) => void );

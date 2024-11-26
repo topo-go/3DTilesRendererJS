@@ -1,4 +1,5 @@
-import { GeoUtils, WGS84_ELLIPSOID, GoogleTilesRenderer } from '../src/index.js';
+import { GeoUtils, WGS84_ELLIPSOID, TilesRenderer } from '3d-tiles-renderer';
+import { GoogleCloudAuthPlugin } from '3d-tiles-renderer/plugins';
 import {
 	Scene,
 	WebGLRenderer,
@@ -9,7 +10,9 @@ import {
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min.js';
-import { OrbitControls } from './src/lib/OrbitControls.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TileCompressionPlugin } from './src/plugins/TileCompressionPlugin.js';
+import { TilesFadePlugin } from './src/plugins/fade/TilesFadePlugin.js';
 
 let camera, controls, scene, renderer, tiles;
 
@@ -40,13 +43,17 @@ function reinstantiateTiles() {
 
 	}
 
-	tiles = new GoogleTilesRenderer( params.apiKey );
+	tiles = new TilesRenderer();
+	tiles.registerPlugin( new GoogleCloudAuthPlugin( { apiToken: params.apiKey } ) );
+	tiles.registerPlugin( new TileCompressionPlugin() );
+	tiles.registerPlugin( new TilesFadePlugin() );
 	// tiles.setLatLonToYUp( 35.3606 * MathUtils.DEG2RAD, 138.7274 * MathUtils.DEG2RAD ); // Mt Fuji
 	// tiles.setLatLonToYUp( 48.8584 * MathUtils.DEG2RAD, 2.2945 * MathUtils.DEG2RAD ); // Eiffel Tower
 	// tiles.setLatLonToYUp( 41.8902 * MathUtils.DEG2RAD, 12.4922 * MathUtils.DEG2RAD ); // Colosseum
 	// tiles.setLatLonToYUp( 43.8803 * MathUtils.DEG2RAD, - 103.4538 * MathUtils.DEG2RAD ); // Mt Rushmore
 	// tiles.setLatLonToYUp( 36.2679 * MathUtils.DEG2RAD, - 112.3535 * MathUtils.DEG2RAD ); // Grand Canyon
 	// tiles.setLatLonToYUp( - 22.951890 * MathUtils.DEG2RAD, - 43.210439 * MathUtils.DEG2RAD ); // Christ the Redeemer
+	// tiles.setLatLonToYUp( 34.9947 * MathUtils.DEG2RAD, 135.7847 * MathUtils.DEG2RAD ); // Kiyomizu-dera
 	tiles.setLatLonToYUp( 35.6586 * MathUtils.DEG2RAD, 139.7454 * MathUtils.DEG2RAD ); // Tokyo Tower
 
 	// Note the DRACO compression files need to be supplied via an explicit source.
@@ -93,6 +100,7 @@ function init() {
 
 	onWindowResize();
 	window.addEventListener( 'resize', onWindowResize, false );
+	window.addEventListener( 'hashchange', initFromHash );
 
 	// GUI
 	const gui = new GUI();
@@ -126,11 +134,9 @@ function initFromHash() {
 
 	}
 
-	const [ lat, lon ] = tokens;
-	WGS84_ELLIPSOID.getCartographicToPosition( lat * MathUtils.DEG2RAD, lon * MathUtils.DEG2RAD, 0, controls.target );
 
-	tiles.group.updateMatrixWorld();
-	controls.target.applyMatrix4( tiles.group.matrixWorld );
+	const [ lat, lon ] = tokens;
+	tiles.setLatLonToYUp( lat * MathUtils.DEG2RAD, lon * MathUtils.DEG2RAD );
 
 }
 
@@ -166,7 +172,9 @@ function render() {
 
 		const res = {};
 		WGS84_ELLIPSOID.getPositionToCartographic( vec, res );
-		document.getElementById( 'credits' ).innerText = GeoUtils.toLatLonString( res.lat, res.lon ) + '\n' + tiles.getCreditsString();
+
+		const attributions = tiles.getAttributions()[ 0 ]?.value || '';
+		document.getElementById( 'credits' ).innerText = GeoUtils.toLatLonString( res.lat, res.lon ) + '\n' + attributions;
 
 	}
 

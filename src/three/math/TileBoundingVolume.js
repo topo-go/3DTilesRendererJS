@@ -1,15 +1,12 @@
-import { Ray, Vector3, Sphere } from 'three';
-import { WGS84_RADIUS, WGS84_HEIGHT } from '../../base/constants.js';
+import { Vector3, Sphere } from 'three';
 import { OBB } from './OBB.js';
 import { EllipsoidRegion } from './EllipsoidRegion.js';
 
 const _vecX = new Vector3();
 const _vecY = new Vector3();
 const _vecZ = new Vector3();
-const _vec = new Vector3();
 const _sphereVec = new Vector3();
 const _obbVec = new Vector3();
-const _ray = new Ray();
 
 // TODO: check region more precisely in all functions
 export class TileBoundingVolume {
@@ -37,14 +34,9 @@ export class TileBoundingVolume {
 		}
 
 		// Early out if we don't this this tile box
-		if ( obb ) {
+		if ( obb && ! obb.intersectsRay( ray ) ) {
 
-			_ray.copy( ray ).applyMatrix4( obb.inverseTransform );
-			if ( ! _ray.intersectsBox( obb.box ) ) {
-
-				return false;
-
-			}
+			return false;
 
 		}
 
@@ -72,11 +64,9 @@ export class TileBoundingVolume {
 
 		if ( obb ) {
 
-			// the obb transform contains no scale
-			_ray.copy( ray ).applyMatrix4( obb.inverseTransform );
-			if ( _ray.intersectBox( obb.box, _obbVec ) ) {
+			if ( obb.intersectRay( ray, _obbVec ) ) {
 
-				obbDistSq = obb.box.containsPoint( _ray.origin ) ? 0 : _ray.origin.distanceToSquared( _obbVec );
+				obbDistSq = obb.containsPoint( ray.origin ) ? 0 : ray.origin.distanceToSquared( _obbVec );
 
 			}
 
@@ -115,9 +105,7 @@ export class TileBoundingVolume {
 
 		if ( obb ) {
 
-			// the obb transform contains no scale
-			_vec.copy( point ).applyMatrix4( obb.inverseTransform );
-			obbDistance = obb.box.distanceToPoint( _vec );
+			obbDistance = obb.distanceToPoint( point );
 
 		}
 
@@ -263,10 +251,10 @@ export class TileBoundingVolume {
 
 	}
 
-	setRegionData( west, south, east, north, minHeight, maxHeight ) {
+	setRegionData( ellipsoid, west, south, east, north, minHeight, maxHeight ) {
 
 		const region = new EllipsoidRegion(
-			WGS84_RADIUS, WGS84_RADIUS, WGS84_HEIGHT,
+			...ellipsoid.radius,
 			south, north,
 			west, east,
 			minHeight, maxHeight,

@@ -1,7 +1,7 @@
 import { Matrix4, Ray, Vector3, REVISION } from 'three';
 
 // In three.js r165 and higher raycast traversal can be ended early
-const REVISION_165 = parseInt( REVISION ) < 165;
+const REVISION_LESS_165 = parseInt( REVISION ) < 165;
 const _mat = new Matrix4();
 const _localRay = new Ray();
 const _vec = new Vector3();
@@ -13,9 +13,10 @@ function distanceSort( a, b ) {
 
 }
 
-function intersectTileScene( scene, raycaster, intersects ) {
+function intersectTileScene( tile, raycaster, renderer, intersects ) {
 
-	if ( REVISION_165 ) {
+	const { scene } = tile.cached;
+	if ( REVISION_LESS_165 ) {
 
 		// Don't intersect the box3 helpers because those are used for debugging
 		scene.traverse( c => {
@@ -24,19 +25,24 @@ function intersectTileScene( scene, raycaster, intersects ) {
 			Object.getPrototypeOf( c ).raycast.call( c, raycaster, intersects );
 
 		} );
-		_hitArray.sort( distanceSort );
 
 	} else {
 
-		raycaster.intersectObject( scene, true, intersects );
+		const didRaycast = renderer.invokeOnePlugin( plugin => plugin.raycastTile && plugin.raycastTile( tile, scene, raycaster, intersects ) );
+		if ( ! didRaycast ) {
+
+			raycaster.intersectObject( scene, true, intersects );
+
+		}
 
 	}
 
 }
 
-function intersectTileSceneFirstHist( scene, raycaster ) {
+function intersectTileSceneFirstHist( tile, raycaster, renderer ) {
 
-	intersectTileScene( scene, raycaster, _hitArray );
+	intersectTileScene( tile, raycaster, renderer, _hitArray );
+	_hitArray.sort( distanceSort );
 
 	const hit = _hitArray[ 0 ] || null;
 	_hitArray.length = 0;
@@ -93,7 +99,7 @@ export function raycastTraverseFirstHit( renderer, tile, raycaster, localRay = n
 	let bestHitDistSq = Infinity;
 	if ( activeTiles.has( tile ) ) {
 
-		const hit = intersectTileSceneFirstHist( tile.cached.scene, raycaster );
+		const hit = intersectTileSceneFirstHist( tile, raycaster, renderer );
 		if ( hit ) {
 
 			bestHit = hit;
@@ -138,7 +144,7 @@ export function raycastTraverseFirstHit( renderer, tile, raycaster, localRay = n
 export function raycastTraverse( renderer, tile, raycaster, intersects, localRay = null ) {
 
 	const { group, activeTiles } = renderer;
-	const { scene, boundingVolume } = tile.cached;
+	const { boundingVolume } = tile.cached;
 	renderer.ensureChildrenArePreprocessed( tile );
 
 	// get the ray in the local group frame
@@ -158,7 +164,7 @@ export function raycastTraverse( renderer, tile, raycaster, intersects, localRay
 
 	if ( activeTiles.has( tile ) ) {
 
-		intersectTileScene( scene, raycaster, intersects );
+		intersectTileScene( tile, raycaster, renderer, intersects );
 
 	}
 

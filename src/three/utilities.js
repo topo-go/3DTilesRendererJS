@@ -1,19 +1,54 @@
-import { Color } from 'three';
+import { estimateBytesUsed as _estimateBytesUsed } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import * as THREE from 'three';
 
-const colors = {};
+// Returns the estimated number of bytes used by the object
+export function estimateBytesUsed( object ) {
 
-// Return a consistant random color for an index
-export function getIndexedRandomColor( index ) {
+	// NOTE: This is for backwards compatibility and should be removed later
+	const { TextureUtils } = THREE;
+	if ( ! TextureUtils ) {
 
-	if ( ! colors[ index ] ) {
-
-		const h = Math.random();
-		const s = 0.5 + Math.random() * 0.5;
-		const l = 0.375 + Math.random() * 0.25;
-
-		colors[ index ] = new Color().setHSL( h, s, l );
+		return 0;
 
 	}
-	return colors[ index ];
+
+	const dedupeSet = new Set();
+
+	let totalBytes = 0;
+	object.traverse( c => {
+
+		// get geometry bytes
+		if ( c.geometry && ! dedupeSet.has( c.geometry ) ) {
+
+			totalBytes += _estimateBytesUsed( c.geometry );
+			dedupeSet.add( c.geometry );
+
+		}
+
+		// get material bytes
+		if ( c.material ) {
+
+			const material = c.material;
+			for ( const key in material ) {
+
+				const value = material[ key ];
+				if ( value && value.isTexture && ! dedupeSet.has( value ) ) {
+
+					const { format, type, image } = value;
+					const { width, height } = image;
+					const bytes = TextureUtils.getByteLength( width, height, format, type );
+					totalBytes += value.generateMipmaps ? bytes * 4 / 3 : bytes;
+
+					dedupeSet.add( value );
+
+				}
+
+			}
+
+		}
+
+	} );
+
+	return totalBytes;
 
 }

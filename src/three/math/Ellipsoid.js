@@ -1,4 +1,4 @@
-import { Vector3, Spherical, MathUtils, Ray, Matrix4, Sphere } from 'three';
+import { Vector3, Spherical, MathUtils, Ray, Matrix4, Sphere, Euler } from 'three';
 import { swapToGeoFrame, latitudeToSphericalPhi } from './GeoUtils.js';
 
 const _spherical = new Spherical();
@@ -7,7 +7,9 @@ const _vec = new Vector3();
 const _vec2 = new Vector3();
 const _vec3 = new Vector3();
 const _matrix = new Matrix4();
+const _matrix2 = new Matrix4();
 const _sphere = new Sphere();
+const _euler = new Euler();
 
 const _vecX = new Vector3();
 const _vecY = new Vector3();
@@ -18,6 +20,10 @@ const _ray = new Ray();
 
 const EPSILON12 = 1e-12;
 const CENTER_EPS = 0.1;
+
+export const ENU_FRAME = 0;
+export const CAMERA_FRAME = 1;
+export const OBJECT_FRAME = 2;
 
 export class Ellipsoid {
 
@@ -51,38 +57,93 @@ export class Ellipsoid {
 	// returns a frame with Z indicating altitude
 	// Y pointing north
 	// X pointing east
-	constructLatLonFrame( lat, lon, target ) {
+	getEastNorthUpFrame( lat, lon, target ) {
 
-		this.getCartographicToPosition( lat, lon, 0, _pos );
-		this.getCartographicToNormal( lat, lon, _vecZ );
-		this.getNorthernTangent( lat, lon, _vecY );
-		_vecX.crossVectors( _vecY, _vecZ );
-
+		this.getEastNorthUpAxes( lat, lon, _vecX, _vecY, _vecZ, _pos );
 		return target.makeBasis( _vecX, _vecY, _vecZ ).setPosition( _pos );
+
+	}
+
+	getEastNorthUpAxes( lat, lon, vecEast, vecNorth, vecUp, point = _pos ) {
+
+		this.getCartographicToPosition( lat, lon, 0, point );
+		this.getCartographicToNormal( lat, lon, vecUp );		// up
+		vecEast.set( - point.y, point.x, 0 ).normalize();		// east
+		vecNorth.crossVectors( vecUp, vecEast ).normalize();	// north
 
 	}
 
 	getNorthernTangent( lat, lon, target, westTarget = _vec3 ) {
 
-		let multiplier = 1;
-		let latPrime = lat + 1e-7;
-		if ( lat > Math.PI / 4 ) {
+		console.log( 'Ellipsoid: getNorthernTangent has been deprecated. Use getEastNorthUpAxes instead.' );
 
-			multiplier = - 1;
-			latPrime = lat - 1e-7;
+		this.getEastNorthUpAxes( lat, lon, westTarget, target, _vecZ );
+		westTarget.multiplyScalar( - 1 );
+		return target;
+
+	}
+
+	// azimuth: measured off of true north, increasing towards "east"
+	// elevation: measured off of the horizon, increasing towards sky
+	// roll: rotation around northern axis
+	getAzElRollFromRotationMatrix( lat, lon, rotationMatrix, target, frame = ENU_FRAME ) {
+
+		// if working with a frame that is not the ENU_FRAME then multiply in the
+		// offset for a camera or object so "forward" and "up" are oriented correct
+		if ( frame === CAMERA_FRAME ) {
+
+			_euler.set( - Math.PI / 2, 0, 0, 'XYZ' );
+			_matrix2.makeRotationFromEuler( _euler ).premultiply( rotationMatrix );
+
+		} else if ( frame === OBJECT_FRAME ) {
+
+			_euler.set( - Math.PI / 2, 0, Math.PI, 'XYZ' );
+			_matrix2.makeRotationFromEuler( _euler ).premultiply( rotationMatrix );
+
+		} else {
+
+			_matrix2.copy( rotationMatrix );
 
 		}
 
-		const norm = this.getCartographicToNormal( lat, lon, _vec ).normalize();
-		const normPrime = this.getCartographicToNormal( latPrime, lon, _vec2 ).normalize();
-		westTarget
-			.crossVectors( norm, normPrime )
-			.normalize()
-			.multiplyScalar( multiplier );
+		this.getEastNorthUpFrame( lat, lon, _matrix ).invert();
+		_matrix2.premultiply( _matrix );
+		_euler.setFromRotationMatrix( _matrix2, 'ZXY' );
 
-		return target
-			.crossVectors( westTarget, norm )
-			.normalize();
+		target.azimuth = - _euler.z;
+		target.elevation = _euler.x;
+		target.roll = _euler.y;
+		return target;
+
+	}
+
+	getRotationMatrixFromAzElRoll( lat, lon, az, el, roll, target, frame = ENU_FRAME ) {
+
+		this.getEastNorthUpFrame( lat, lon, _matrix );
+		_euler.set( el, roll, - az, 'ZXY' );
+
+		target
+			.makeRotationFromEuler( _euler )
+			.premultiply( _matrix )
+			.setPosition( 0, 0, 0 );
+
+		// Add in the orientation adjustment for objects and cameras so "forward" and "up" are oriented
+		// correctly
+		if ( frame === CAMERA_FRAME ) {
+
+			_euler.set( Math.PI / 2, 0, 0, 'XYZ' );
+			_matrix2.makeRotationFromEuler( _euler );
+			target.multiply( _matrix2 );
+
+		} else if ( frame === OBJECT_FRAME ) {
+
+			_euler.set( - Math.PI / 2, 0, Math.PI, 'XYZ' );
+			_matrix2.makeRotationFromEuler( _euler );
+			target.multiply( _matrix2 );
+
+		}
+
+		return target;
 
 	}
 
@@ -257,6 +318,19 @@ export class Ellipsoid {
 
 		const heightDelta = _vec2.subVectors( pos, _vec );
 		return Math.sign( heightDelta.dot( pos ) ) * heightDelta.length();
+
+	}
+
+	copy( source ) {
+
+		this.radius.copy( source.radius );
+		return this;
+
+	}
+
+	clone() {
+
+		return new this.constructor().copy( this );
 
 	}
 

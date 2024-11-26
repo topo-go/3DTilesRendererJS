@@ -1,4 +1,4 @@
-import { I3DMLoader } from '../src/index.js';
+import { I3DMLoader } from '3d-tiles-renderer';
 import {
 	Scene,
 	DirectionalLight,
@@ -61,7 +61,7 @@ function init() {
 	scene.add( ambLight );
 
 	new I3DMLoader()
-		.load( 'https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithTreeBillboards/tree.i3dm' )
+		.loadAsync( 'https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithTreeBillboards/tree.i3dm' )
 		.then( res => {
 
 			let instance = null;

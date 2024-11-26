@@ -1,8 +1,9 @@
-import { Matrix4, Box3, Vector3, Plane } from 'three';
+import { Matrix4, Box3, Vector3, Plane, Ray } from 'three';
 
 const _worldMin = new Vector3();
 const _worldMax = new Vector3();
 const _norm = new Vector3();
+const _ray = new Ray();
 
 export class OBB {
 
@@ -13,6 +14,66 @@ export class OBB {
 		this.inverseTransform = new Matrix4();
 		this.points = new Array( 8 ).fill().map( () => new Vector3() );
 		this.planes = new Array( 6 ).fill().map( () => new Plane() );
+
+	}
+
+	/**
+	 * Clamps the given point within the bounds of this OBB
+	 * @param {Vector3} point
+	 * @param {Vector3} result
+	 * @returns {Vector3}
+	 */
+	clampPoint( point, result ) {
+
+		return result.copy( point )
+			.applyMatrix4( this.inverseTransform )
+			.clamp( this.box.min, this.box.max )
+			.applyMatrix4( this.transform );
+
+	}
+
+	/**
+	 * Returns the distance from any edge of this OBB to the specified point.
+	 * If the point lies inside of this box, the distance will be 0.
+	 * @param {Vector3} point
+	 * @returns {number}
+	 */
+	distanceToPoint( point ) {
+
+		return this.clampPoint( point, _norm ).distanceTo( point );
+
+	}
+
+	containsPoint( point ) {
+
+		_norm.copy( point ).applyMatrix4( this.inverseTransform );
+		return this.box.containsPoint( _norm );
+
+	}
+
+	// returns boolean indicating whether the ray has intersected the obb
+	intersectsRay( ray ) {
+
+		_ray.copy( ray ).applyMatrix4( this.inverseTransform );
+		return _ray.intersectsBox( this.box );
+
+	}
+
+	// Sets "target" equal to the intersection point.
+	// Returns "null" if no intersection found.
+	intersectRay( ray, target ) {
+
+		_ray.copy( ray ).applyMatrix4( this.inverseTransform );
+		if ( _ray.intersectBox( this.box, target ) ) {
+
+			target.applyMatrix4( this.transform );
+			return target;
+
+		} else {
+
+			return null;
+
+		}
 
 	}
 

@@ -1,4 +1,5 @@
-import { CesiumIonTilesRenderer, EnvironmentControls } from '../src/index.js';
+import { EnvironmentControls, TilesRenderer } from '3d-tiles-renderer';
+import { CesiumIonAuthPlugin } from '3d-tiles-renderer/plugins';
 import {
 	Scene,
 	WebGLRenderer,
@@ -71,8 +72,9 @@ function reinstantiateTiles() {
 
 	localStorage.setItem( 'ionApiKey', params.ionAccessToken );
 
-	tiles = new CesiumIonTilesRenderer( params.ionAssetId, params.ionAccessToken );
-	tiles.onLoadTileSet = () => {
+	tiles = new TilesRenderer();
+	tiles.registerPlugin( new CesiumIonAuthPlugin( { apiToken: params.ionAccessToken, assetId: params.ionAssetId } ) );
+	tiles.addEventListener( 'load-tile-set', () => {
 
 		// because ion examples typically are positioned on the planet surface we can orient
 		// it such that up is Y+ and center the model
@@ -93,7 +95,7 @@ function reinstantiateTiles() {
 
 		tiles.group.position.y = - distanceToEllipsoidCenter;
 
-	};
+	} );
 
 	setupTiles();
 
